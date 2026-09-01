@@ -40,6 +40,14 @@ describe('route resolution helpers', () => {
     expect(sessionRouteOf(ctx, 's1')).toBeUndefined()
   })
 
+  // Regression: a throwing `requestHeader()` (frozen session object, future
+  // signature change) must degrade to the default route instead of failing
+  // the whole enhance request.
+  it('degrades when the header method throws', () => {
+    const ctx = fakeCtx({ sessions: { get: () => ({ requestHeader: () => { throw new Error('boom') } }) } })
+    expect(sessionRouteOf(ctx, 's1')).toBeUndefined()
+  })
+
   it('still accepts the property shape defensively', () => {
     const ctx = fakeCtx({ sessions: { get: () => ({ requestHeader: { config: { provider: 'p2', model: 'm2' } } }) } })
     expect(sessionRouteOf(ctx, 's1')).toEqual({ provider: 'p2', model: 'm2' })

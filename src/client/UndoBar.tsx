@@ -7,8 +7,7 @@
  * @module dsh-prompt-enhance/client/UndoBar
  */
 
-import { useEffect, type ReactNode } from 'react'
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore, type ReactNode } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import * as ui from './ui-state'

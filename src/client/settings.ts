@@ -19,6 +19,7 @@ export interface ClientSettings {
 // silently desyncing the two defaults.
 type AssertMirror = keyof ClientSettings extends keyof import('../config').Config ? true : never
 const _assertMirror: AssertMirror = true
+void _assertMirror
 /** Defaults mirroring the host `DEFAULT_CONFIG`. */
 export const DEFAULT_CLIENT_SETTINGS: ClientSettings = {
   enabled: true,

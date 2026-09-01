@@ -91,13 +91,19 @@ describe('/enhance slash command', () => {
   })
 
   it('returns the enhanced text and passes the session route through', async () => {
+    const sessionRoute = { provider: 'p', model: 'm' }
+    vi.mocked(sessionRouteOf).mockReturnValue(sessionRoute)
     vi.mocked(runEnhance).mockResolvedValue({ text: 'enhanced', provider: 'p', model: 'm', elapsedMs: 5 })
     const definition = captureDefinition()
     const result = await definition.handler(invocation('hello'))
     expect(result).toEqual({ kind: 'success', text: 'enhanced' })
+    // The session route must be read from the invocation's session id and
+    // handed to runEnhance unchanged — dropping either line regresses this.
+    expect(sessionRouteOf).toHaveBeenCalledTimes(1)
+    expect(sessionRouteOf).toHaveBeenCalledWith(expect.anything(), 's1')
     expect(runEnhance).toHaveBeenCalledTimes(1)
     const call = vi.mocked(runEnhance).mock.calls[0]!
-    expect(call[2]).toEqual(expect.objectContaining({ text: 'hello', sessionId: 's1' }))
+    expect(call[2]).toEqual(expect.objectContaining({ text: 'hello', sessionId: 's1', sessionRoute }))
     expect(call[2].signal).toBeInstanceOf(AbortSignal)
   })
 

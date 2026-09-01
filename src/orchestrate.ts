@@ -55,7 +55,15 @@ export function sessionRouteOf(ctx: Context, sessionId: string | undefined): Rou
   if (sessionId === undefined || sessionId === '') return undefined
   const session = (ctx.get('sessions') as SessionsFace | undefined)?.get(sessionId)
   const header = session?.requestHeader
-  const epoch = typeof header === 'function' ? header.call(session) : header
+  let epoch: EpochHeaderLike | undefined
+  try {
+    epoch = typeof header === 'function' ? header.call(session) : header
+  } catch {
+    // A session-layer hiccup (frozen object, a future signature change,
+    // anything a getter throws) must degrade to the harness default route —
+    // never turn one enhance request into a 502 / 「增强失败」.
+    return undefined
+  }
   return routeOf(epoch?.config)
 }
 
