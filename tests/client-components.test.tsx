@@ -246,11 +246,40 @@ describe('incremental streaming display', () => {
     expect(screen.queryByText(zh['panel.streaming'])).toBeNull()
   })
 
-  it('drops deltas that arrive after the panel moved on', () => {
+  it('drops deltas that arrive after the panel moved on', async () => {
     ui.openLoading({ sessionId: 'late', original: 'x', abort: () => {} })
     ui.settleResult('late', { text: 'done', provider: 'p', model: 'm', elapsedMs: 1 })
     ui.appendDelta('late', 'stale text')
+    // The stale delta is buffered behind a microtask flush; the panel must
+    // still be streaming-undefined after the flush has run.
+    await Promise.resolve()
     expect(ui.getPanel()?.streaming).toBeUndefined()
     ui.closePanel()
+  })
+
+  // Regression for the P1-1 batching optimization: 50 deltas in the same JS
+  // turn must collapse into a single panelState mutation + one subscriber
+  // notification, so React re-renders the preview panel exactly once instead
+  // of 50 times during a fast model's first second of output.
+  it('batches many same-turn deltas into a single panel update', async () => {
+    const listener = vi.fn()
+    const unsubscribe = ui.subscribe(listener)
+    try {
+      ui.openLoading({ sessionId: 'batch', original: 'x', abort: () => {} })
+      const beforeBatching = listener.mock.calls.length
+      for (let i = 0; i < 50; i++) ui.appendDelta('batch', `tok${i} `)
+      // Synchronously, the panel is still the pre-batch snapshot — the
+      // batching has scheduled the flush but not run it.
+      expect(ui.getPanel()?.streaming).toBeUndefined()
+      // No listener fire happened yet: the buffer absorbed everything.
+      expect(listener.mock.calls.length).toBe(beforeBatching)
+      await Promise.resolve()
+      expect(ui.getPanel()?.streaming).toBe('tok0 tok1 tok2 tok3 tok4 tok5 tok6 tok7 tok8 tok9 tok10 tok11 tok12 tok13 tok14 tok15 tok16 tok17 tok18 tok19 tok20 tok21 tok22 tok23 tok24 tok25 tok26 tok27 tok28 tok29 tok30 tok31 tok32 tok33 tok34 tok35 tok36 tok37 tok38 tok39 tok40 tok41 tok42 tok43 tok44 tok45 tok46 tok47 tok48 tok49 ')
+      // One notify for the whole batch, not 50.
+      expect(listener.mock.calls.length).toBe(beforeBatching + 1)
+    } finally {
+      unsubscribe()
+      ui.closePanel()
+    }
   })
 })

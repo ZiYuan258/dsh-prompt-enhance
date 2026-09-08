@@ -124,7 +124,7 @@ dsh plugin --profile web remove dsh-prompt-enhance
 | `maxConcurrent` | `2` | **单个 Host 进程内**的并发上限;超出的请求返回 `429`(`concurrency-limit`)。浏览器 UI 因单预览面板天然只允许 1 个在途请求,此上限主要保护 `/enhance` 命令入口与多客户端调用 |
 | `rateLimitPerMinute` | `10` | **单个 Host 进程内**的每分钟滑动窗口限流,只统计**成功完成**的增强——失败(超时 / 上游错误 / 取消)不消耗窗口,连续失败不会把自己限流;超出的请求返回 `429`(`rate-limit`),响应附 `Retry-After` 秒数 |
 | `streaming` | `true` | 模型边写边在面板展示,而非等整段写完——**仅影响显示节奏**,最终文本仍是归一化的完整结果;宿主或网络不支持 `text/event-stream` 时客户端会自动回退为一次性 JSON 请求 |
-| `contextAware` | `true` | 读取当前对话的近期历史,用于消解代词、补全已声明的约束、镜像已确立的栈与术语。无会话、无历史、或关闭此开关时,自动回退为单条增强——上下文是优化、不是前置条件 |
+| `contextAware` | `true` | 读取当前对话的近期历史,用于消解代词、补全已声明的约束、镜像已确立的栈与术语。无会话、无历史、或关闭此开关时,自动回退为单条增强——上下文是优化、不是前置条件。**隐私:** 装配好的历史片段会随草稿一起发给当前配置的 LLM;若当前会话含密钥、token、内部代号等敏感内容,请关闭 `contextAware`(或先结束该会话再开新会话增强) |
 | `contextMaxMessages` | `8` | 上下文窗口广度——最多参考多少条 user/assistant 轮;`0` 表示不参考 |
 | `contextMaxChars` | `4000` | 上下文窗口深度——历史片段的字符预算,从最新一条起向前装配;`0` 表示不参考 |
 | `provider` + `model` 取值 | — | 与 harness 设置一致:设置文件 `llm-pi-ai.providers` 下的键就是 provider(如 `zhipu`、`muyuu`),其 `models[].id` 就是 model(如 `glm-5.3-flash`)。示例:`provider: zhipu` + `model: glm-5.3-flash` |
@@ -211,6 +211,7 @@ dsh plugin --profile web remove dsh-prompt-enhance
 - **请求级超时由宿主与 Node 兜底** —— 插件层只限制 body 字节数(含 Content-Length 快速拒绝)与单次模型调用的 `timeoutMs`;连接级超时(headers timeout / request timeout / keep-alive)是共享 `http.Server` 的 server 级配置,插件不覆盖,由宿主与 Node 默认值(headers 60 秒 / request 300 秒)兜底。
 - **不要经反向代理暴露** —— 若把 dsh web 放在监听局域网的代理后面,外部调用者在路由看来就是回环地址,栅栏形同虚设。除非在代理层自行加鉴权,否则不要暴露。
 - **提示注入边界** —— 草稿被框在 `<raw_prompt>` 标签之间,草稿内的字面闭合标签会被中和,策略提示词把框内文本视为纯数据——降低简单标签逃逸的风险;基于提示词的边界是尽力而为,并非完整防护。增强只使用你自己的凭据,结果也只回显给你本人。
+- **会话上下文数据外发** —— `contextAware` 默认开启时,本插件会装配当前会话近期的 `user`/`assistant` 历史(条数与字符数受 `contextMaxMessages` / `contextMaxChars` 限制),随草稿一起发给当前配置的 LLM。该历史可能携带你之前在会话里输入过的密钥、token、内网主机名、客户名称等,模型提供方会**原文看到**。把 `contextAware` 视为隐私边界:不该外发的会话先关闭该开关,或结束会话、开新会话再增强。策略提示词里关于上下文的硬性约束可以禁止模型「基于上下文凭空加东西」,但**无法撤回已经发出去的内容**。
 
 ## 架构
 

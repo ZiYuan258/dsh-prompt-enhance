@@ -49,6 +49,47 @@ function notify(): void {
   for (const listener of listeners) listener()
 }
 
+/**
+ * Pending streaming delta batch. Multiple `appendDelta` calls inside the same
+ * JS turn (a single model stream tick may yield several delta chunks back to
+ * back) are coalesced into one `panelState` mutation + one `notify()` instead
+ * of N. This caps the React re-render rate at "once per microtask" instead of
+ * "once per model token", which matters on long rewrites where a fast model
+ * can push 100+ tokens/second and each sync `notify` triggers a full panel
+ * re-render. The trade-off: callers that read `getPanel().streaming` SYNCHRONOUSLY
+ * right after `appendDelta` see the OLD value until the microtask flushes;
+ * every test or component that needs the new value should `await Promise.resolve()`
+ * first. In React this is automatic — the component subscribes via
+ * `useSyncExternalStore` and reads during render, which runs after the
+ * microtask completes.
+ */
+let pendingDeltaText = ''
+let pendingDeltaSession: string | undefined
+let pendingDeltaScheduled = false
+
+/** Drain the pending delta into panelState and notify subscribers. */
+function flushPendingDelta(): void {
+  pendingDeltaScheduled = false
+  if (pendingDeltaText === '' || pendingDeltaSession === undefined) return
+  const sessionId = pendingDeltaSession
+  const text = pendingDeltaText
+  pendingDeltaText = ''
+  pendingDeltaSession = undefined
+  // Re-check the panel state on flush: the panel may have moved on (settled,
+  // replaced, closed) between schedule and flush, in which case the batch
+  // must be dropped so a late delta can never leak into another result.
+  if (panelState === undefined || panelState.sessionId !== sessionId || panelState.phase !== 'loading') return
+  panelState = { ...panelState, streaming: (panelState.streaming ?? '') + text }
+  notify()
+}
+
+/** Schedule one microtask flush if none is already pending. */
+function scheduleDeltaFlush(): void {
+  if (pendingDeltaScheduled) return
+  pendingDeltaScheduled = true
+  queueMicrotask(flushPendingDelta)
+}
+
 /** The shared undo store (depth 3 per session). */
 const undoStore: UndoStack = createUndoStack(3)
 
@@ -119,15 +160,19 @@ export function settleError(sessionId: string, error: EnhanceError): void {
 }
 
 /**
- * Append newly displayable text to the loading panel. Ignored once the panel
- * moved on (settled, replaced, or closed), so a late delta from an aborted
- * stream can never leak into another result.
+ * Append newly displayable text to the loading panel. Multiple calls inside
+ * the same JS turn are coalesced into a single panelState mutation (see the
+ * `pendingDeltaText` notes above). Dropped synchronously when the panel is
+ * gone / on a different session / not in the loading phase, and dropped
+ * again on flush if the panel moved on in between — so a late delta from an
+ * aborted stream can never leak into another result.
  */
 export function appendDelta(sessionId: string, text: string): void {
   if (text === '') return
   if (panelState === undefined || panelState.sessionId !== sessionId || panelState.phase !== 'loading') return
-  panelState = { ...panelState, streaming: (panelState.streaming ?? '') + text }
-  notify()
+  pendingDeltaText += text
+  pendingDeltaSession = sessionId
+  scheduleDeltaFlush()
 }
 
 /** Open the panel directly in the error phase (local validation failures). */

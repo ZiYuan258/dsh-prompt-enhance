@@ -148,11 +148,19 @@ async function serveEnhance(ctx: Context, readConfig: () => Config, gate: Admiss
   // bounds in-flight calls regardless of outcome, so failed calls cannot be
   // used to hammer the upstream either.
   const now = Date.now()
-  while (gate.stamps.length > 0 && now - (gate.stamps[0] ?? now) >= 60000) gate.stamps.shift()
-  if (gate.stamps.length >= config.rateLimitPerMinute) {
+  // Trim the window in one splice instead of a `while (shift)` loop: with the
+  // configured cap at 600 the worst case drops from O(N²) array shifts to a
+  // single O(N) relocation. The cap is bounded, so this stays cheap in
+  // absolute terms; the point is to avoid the quadratic shape on every call.
+  const stamps = gate.stamps
+  const cut = now - 60000
+  let validFrom = 0
+  while (validFrom < stamps.length && (stamps[validFrom] ?? cut) < cut) validFrom++
+  if (validFrom > 0) stamps.splice(0, validFrom)
+  if (stamps.length >= config.rateLimitPerMinute) {
     // The window is bounded, so the oldest surviving stamp tells exactly when
     // a slot frees up — advertise it instead of making the user guess.
-    const oldest = gate.stamps[0] ?? now
+    const oldest = stamps[0] ?? now
     const retryAfterSeconds = Math.max(1, Math.ceil((60000 - (now - oldest)) / 1000))
     res.setHeader('Retry-After', String(retryAfterSeconds))
     writeJson(res, 429, {
@@ -209,7 +217,7 @@ async function serveEnhance(ctx: Context, readConfig: () => Config, gate: Admiss
     // Count only on success: failed calls must not consume the sliding window
     // (see the gate note above). `Date.now()` at completion, not admission,
     // keeps the window honest — a slow success still counts as one call.
-    gate.stamps.push(Date.now())
+    stamps.push(Date.now())
   } catch (error) {
     const wire = toEnhanceError(error)
     if (stream && res.headersSent) {
