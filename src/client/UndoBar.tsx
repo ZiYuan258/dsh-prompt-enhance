@@ -11,6 +11,7 @@ import { useEffect, useSyncExternalStore, type ReactNode } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import * as ui from './ui-state'
+import { useSessionKey } from './session-key'
 
 /** Props of the input.dock entry: the InputZone owner share + session kit + locale seat. */
 export type UndoBarProps = PropsRuntime<'conversation.input.dock'> & PropsLocale<'prompt-enhance'>
@@ -18,23 +19,26 @@ export type UndoBarProps = PropsRuntime<'conversation.input.dock'> & PropsLocale
 /** One session's undo affordance. */
 export function UndoBar(props: UndoBarProps): ReactNode {
   const { t, sessionId, useInput, inputActions } = props
+  // 0.1.1-rc.2 carries sessionId on the props; 0.1.2-rc.1 dropped it. Use the
+  // host id for UI keying when present, else a stable per-mount fallback.
+  const uiKey = useSessionKey(sessionId)
   const draft = useInput((state) => state.draft)
   useSyncExternalStore(ui.subscribe, ui.getVersion)
-  const entry = ui.peekUndo(sessionId)
+  const entry = ui.peekUndo(uiKey)
 
   // The draft moved on (user edited after applying): drop the stale entry.
   useEffect(() => {
-    if (entry !== undefined && entry.applied !== draft) ui.popUndo(sessionId)
-  }, [draft, entry, sessionId])
+    if (entry !== undefined && entry.applied !== draft) ui.popUndo(uiKey)
+  }, [draft, entry, uiKey])
 
   if (entry === undefined || entry.applied !== draft) return null
 
   const undo = (): void => {
     inputActions.setDraft(entry.original)
-    ui.popUndo(sessionId)
+    ui.popUndo(uiKey)
   }
   const dismiss = (): void => {
-    ui.popUndo(sessionId)
+    ui.popUndo(uiKey)
   }
 
   return (

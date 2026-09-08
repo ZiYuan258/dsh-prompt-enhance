@@ -2,6 +2,15 @@
 
 All notable changes are documented here. Versions follow [npm](https://www.npmjs.com/package/dsh-prompt-enhance); each release also has a [GitHub Release](https://github.com/rongxingda/dsh-prompt-enhance/releases) page with notes.
 
+## 0.1.10 (unreleased)
+
+Dual-host compatibility across the dsh `0.1.1-rc.2` and `0.1.2-rc.1` client API split, with no `package.json` / `engines` change (`engines.dsh` already covers both).
+
+- **Client session key** (new `src/client/session-key.ts`): the input slot owner share (`SessionStandardProps`) carried a `sessionId` on `0.1.1-rc.2`, which `0.1.2-rc.1` dropped (the snapshot hooks `useConversation` / `useInput` / `inputActions` remain). `EnhanceButton` / `UndoBar` now key their panel, undo stack, and shortcut target by `useSessionKey(sessionId)` — the host id when present, otherwise a stable per-mount fallback — so the UI stays correct on both lines. The host route receives the real id only via `serverSessionId(sessionId)`; on `0.1.2-rc.1` it is `undefined`, which degrades to the harness default model route (`sessionRouteOf` undefined branch) — the documented fallback.
+- **Settings registration**: the existing `installSettingsSectionCompat` already probes `ctx.settings.installSection(owner, ns, schema, entry, hooks)` (the `0.1.2` service method) versus the legacy standalone `installSettingsSection` / `settingsNamespace` helpers (the `0.1.1-rc` line, reached through a dynamic import); both paths are exercised by the existing tests. `dsh-client-runtime` stays a devDependency for its cordis declaration merging (`slots` / `sessionId` types), which the `0.1.2` host still satisfies at runtime via `dsh-cordis-client-runner`.
+
+No user-visible behavior change on `0.1.1-rc.2`; the `0.1.2-rc.1` line gains a working client (per-session model routing is unavailable there because the host no longer exposes the session id to the input slots).
+
 ## 0.1.9 (2026-09-01)
 
 Fix a silent no-op in the per-session route-priority layer: `Session.requestHeader` is a method on both dsh generations (`requestHeader(): EpochHeader | undefined`), not a property, but `sessionRouteOf()` read it as a field — so the lookup always saw `undefined` and fell through to the default route. The test mocks shaped it as a property, which is exactly why they passed while the real runtime path was dead. The read now probes at runtime (call it when it is a function, otherwise use the value), and `SessionsFace` reflects both shapes. The client half also dropped its leftover type-only empty imports of the removed `dsh-client-runtime` / `dsh-client-ui-conversation` client entry points, and `ClientContext` now resolves from `@deepseek-ai/cordis` directly (the `dsh-client-runtime` devDependency stays for its cordis declaration merging).

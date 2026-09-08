@@ -19,6 +19,7 @@ import { EnhanceClientError, requestEnhance } from './enhance-client'
 import { ResultPanel } from './ResultPanel'
 import * as ui from './ui-state'
 import { getClientSettings, subscribeClientSettings } from './settings'
+import { useSessionKey, serverSessionId } from './session-key'
 
 /** Props of the input.right entry: the InputZone owner share + session kit + locale seat. */
 export type EnhanceButtonProps = PropsRuntime<'conversation.input.right'> & PropsLocale<'prompt-enhance'>
@@ -26,6 +27,10 @@ export type EnhanceButtonProps = PropsRuntime<'conversation.input.right'> & Prop
 /** One composer's enhance trigger. */
 export function EnhanceButton(props: EnhanceButtonProps): ReactNode {
   const { t, sessionId, useInput, inputActions } = props
+  // 0.1.1-rc.2 carries sessionId on the props; 0.1.2-rc.1 dropped it. Use the
+  // host id for UI keying when present, else a stable per-mount fallback.
+  const uiKey = useSessionKey(sessionId)
+  const wireId = serverSessionId(sessionId)
   const draft = useInput((state) => state.draft)
   const phase = useInput((state) => state.phase)
   const occurrenceCount = useInput((state) => state.occurrences.length)
@@ -33,7 +38,7 @@ export function EnhanceButton(props: EnhanceButtonProps): ReactNode {
   const settings = useSyncExternalStore(subscribeClientSettings, getClientSettings)
   const panel = useSyncExternalStore(ui.subscribe, ui.getPanel)
   const rootRef = useRef<HTMLButtonElement | null>(null)
-  const busy = panel !== undefined && panel.sessionId === sessionId && panel.phase === 'loading'
+  const busy = panel !== undefined && panel.sessionId === uiKey && panel.phase === 'loading'
   // The preview panel is a single shared slot, so the UI admits exactly ONE
   // in-flight enhancement at a time across all sessions: `anyBusy` disables
   // every other composer's button while one request is loading. This is
@@ -46,11 +51,11 @@ export function EnhanceButton(props: EnhanceButtonProps): ReactNode {
   const start = useCallback((): void => {
     if (anyBusy) return
     if (!settings.enabled) {
-      ui.openError(sessionId, draft, { code: 'rejected', message: t('error.disabled'), localized: t('error.disabled') })
+      ui.openError(uiKey, draft, { code: 'rejected', message: t('error.disabled'), localized: t('error.disabled') })
       return
     }
     if (imageCount > 0 && draft.trim() === '') {
-      ui.openError(sessionId, draft, { code: 'rejected', message: t('error.imagesOnly'), localized: t('error.imagesOnly') })
+      ui.openError(uiKey, draft, { code: 'rejected', message: t('error.imagesOnly'), localized: t('error.imagesOnly') })
       return
     }
     const check = checkInputText(draft, settings.maxInputChars)
@@ -58,29 +63,29 @@ export function EnhanceButton(props: EnhanceButtonProps): ReactNode {
       const message = check.code === 'empty'
         ? t('error.empty')
         : t('error.tooLong', { count: check.count, max: check.max })
-      ui.openError(sessionId, draft, { code: 'rejected', message, localized: message })
+      ui.openError(uiKey, draft, { code: 'rejected', message, localized: message })
       return
     }
     if (occurrenceCount > 0) {
-      ui.openError(sessionId, draft, { code: 'rejected', message: t('error.occurrences'), localized: t('error.occurrences') })
+      ui.openError(uiKey, draft, { code: 'rejected', message: t('error.occurrences'), localized: t('error.occurrences') })
       return
     }
     if (phase !== 'plain') {
-      ui.openError(sessionId, draft, { code: 'rejected', message: t('error.phase'), localized: t('error.phase') })
+      ui.openError(uiKey, draft, { code: 'rejected', message: t('error.phase'), localized: t('error.phase') })
       return
     }
     const controller = new AbortController()
-    ui.openLoading({ sessionId, original: draft, abort: () => controller.abort() })
-    requestEnhance({ sessionId, text: draft }, controller.signal).then(
-      (result) => ui.settleResult(sessionId, result),
+    ui.openLoading({ sessionId: uiKey, original: draft, abort: () => controller.abort() })
+    requestEnhance({ sessionId: wireId, text: draft }, controller.signal).then(
+      (result) => ui.settleResult(uiKey, result),
       (error: unknown) => {
         const detail: EnhanceError = error instanceof EnhanceClientError
           ? error.detail
           : { code: 'internal', message: error instanceof Error ? error.message : String(error) }
-        ui.settleError(sessionId, detail)
+        ui.settleError(uiKey, detail)
       },
     )
-  }, [anyBusy, draft, imageCount, occurrenceCount, phase, sessionId, settings, t])
+  }, [anyBusy, draft, imageCount, occurrenceCount, phase, uiKey, settings, t])
 
   // The session registry holds a stable identity; run always dispatches to
   // the latest start callback. The refresh rides an effect (never the render
@@ -94,31 +99,31 @@ export function EnhanceButton(props: EnhanceButtonProps): ReactNode {
       root: rootRef.current,
       run: () => runRef.current(),
     }
-    return ui.registerSession(sessionId, entry)
-  }, [sessionId])
+    return ui.registerSession(uiKey, entry)
+  }, [uiKey])
 
   // Draft changed after the request started → flag (or clear) the result
   // panel's stale marker so the user knows the result is based on the
   // pre-enhance text.
   useEffect(() => {
-    if (panel !== undefined && panel.sessionId === sessionId && panel.phase === 'result') {
-      ui.setStale(sessionId, draft !== panel.original)
+    if (panel !== undefined && panel.sessionId === uiKey && panel.phase === 'result') {
+      ui.setStale(uiKey, draft !== panel.original)
     }
-  }, [draft, panel, sessionId])
+  }, [draft, panel, uiKey])
 
   /** Apply the enhanced result: remember the CURRENT draft (pre-apply, so
    * undo restores exactly this state even if the user typed during the
    * request), then fill the enhanced text back. */
   const apply = useCallback((): void => {
     if (panel === undefined || panel.phase !== 'result' || panel.result === undefined) return
-    ui.pushUndo(sessionId, { original: draft, applied: panel.result.text })
+    ui.pushUndo(uiKey, { original: draft, applied: panel.result.text })
     inputActions.setDraft(panel.result.text)
     ui.closePanel()
   }, [draft, inputActions, panel, sessionId])
 
   if (!settings.enabled) return null
 
-  const owned = panel !== undefined && panel.sessionId === sessionId ? panel : undefined
+  const owned = panel !== undefined && panel.sessionId === uiKey ? panel : undefined
   return (
     <>
       <button
