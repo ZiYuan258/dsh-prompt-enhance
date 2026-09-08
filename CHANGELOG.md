@@ -2,6 +2,14 @@
 
 All notable changes are documented here. Versions follow [npm](https://www.npmjs.com/package/dsh-prompt-enhance); each release also has a [GitHub Release](https://github.com/rongxingda/dsh-prompt-enhance/releases) page with notes.
 
+## 0.1.11 (2026-09-08)
+
+Fix a defect in the 0.1.10 dual-compat fallback that made the undo bar unreachable on `0.1.2-rc.1`. The two client entries — `EnhanceButton` (`conversation.input.right`) and `UndoBar` (`conversation.input.dock`) — are separate component trees, but the fallback id was minted per component instance, so without a host `sessionId` the button pushed its undo entry under one key (`pe:1`) while the bar peeked another (`pe:2`): apply succeeded, yet the undo affordance never appeared.
+
+`useSessionKey(sessionId, inputActions)` now anchors the fallback on the host's `inputActions` — the same object is handed to every slot of one input zone and is documented as stable per Session — so both halves of one composer resolve the same key via a `WeakMap`. When the host id is present the host id is still used verbatim (unchanged `0.1.1-rc.2` behaviour, and it now follows the prop live rather than freezing at mount). `useCallback` deps in `EnhanceButton` follow the rename (`uiKey`, plus `wireId` for the id actually sent).
+
+Tests: 134 (new rc.1 component regression: `sessionId` absent → route receives `undefined`, apply → undo bar appears → undo restores the original — the exact loop that was silently broken).
+
 ## 0.1.10 (2026-09-08)
 
 Dual-host compatibility across the dsh `0.1.1-rc.2` and `0.1.2-rc.1` client API split, with no `package.json` / `engines` change (`engines.dsh` already covers both).

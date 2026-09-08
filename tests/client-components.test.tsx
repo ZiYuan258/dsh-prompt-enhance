@@ -68,8 +68,12 @@ function makeFakeInput(initial: Partial<InputState> & { draft: string }) {
   }
 }
 
-function renderComposer(input: ReturnType<typeof makeFakeInput>, inputActions: Parameters<typeof EnhanceButton>[0]['inputActions']): void {
-  const props = { t, sessionId: 's1', useInput: input.useInput, inputActions } as never
+function renderComposer(
+  input: ReturnType<typeof makeFakeInput>,
+  inputActions: Parameters<typeof EnhanceButton>[0]['inputActions'],
+  sessionId: string | undefined,
+): void {
+  const props = { t, sessionId, useInput: input.useInput, inputActions } as never
   render(
     <>
       <EnhanceButton {...props} />
@@ -84,12 +88,40 @@ beforeEach(() => {
   vi.mocked(requestEnhance).mockReset()
 })
 
+describe('dsh 0.1.2-rc.1 dual-compat (host omits sessionId)', () => {
+  afterEach(cleanup)
+
+  // rc.1 dropped `sessionId` from the input slot standard props. The button
+  // (input.right) and the undo bar (input.dock) are separate component trees,
+  // so both must still land on the SAME fallback key — otherwise the undo bar
+  // silently never appears after an apply.
+  it('keys the button and the undo bar to the same composer and drops the session route', async () => {
+    const input = makeFakeInput({ draft: '旧原文' })
+    const setDraft = vi.fn((text: string) => input.set({ draft: text }))
+    renderComposer(input, { setDraft } as never, undefined)
+    vi.mocked(requestEnhance).mockResolvedValue({ text: '增强文本', provider: 'p', model: 'm', elapsedMs: 5 })
+
+    fireEvent.click(enhanceButton())
+    expect(await screen.findByText('增强文本')).toBeTruthy()
+    // No host id → the server degrades to the harness default model route.
+    expect(requestEnhance).toHaveBeenCalledWith({ sessionId: undefined, text: '旧原文' }, expect.anything())
+
+    fireEvent.click(screen.getByRole('button', { name: zh['panel.apply'] }))
+    expect(setDraft).toHaveBeenCalledWith('增强文本')
+    expect(screen.getByText(zh['undo.applied'])).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: zh['undo.undo'] }))
+    expect(setDraft).toHaveBeenLastCalledWith('旧原文')
+    expect(screen.queryByText(zh['undo.applied'])).toBeNull()
+  })
+})
+
 describe('EnhanceButton guard chain', () => {
   afterEach(cleanup)
 
   it('refuses an empty draft with the localized empty message', () => {
     const input = makeFakeInput({ draft: '   ' })
-    renderComposer(input, { setDraft: vi.fn() } as never)
+    renderComposer(input, { setDraft: vi.fn() } as never, 's1')
     fireEvent.click(enhanceButton())
     expect(screen.getByText(zh['error.empty'])).toBeTruthy()
     expect(requestEnhance).not.toHaveBeenCalled()
@@ -97,14 +129,14 @@ describe('EnhanceButton guard chain', () => {
 
   it('refuses image-only drafts', () => {
     const input = makeFakeInput({ draft: '', imageIds: ['img1' as never] })
-    renderComposer(input, { setDraft: vi.fn() } as never)
+    renderComposer(input, { setDraft: vi.fn() } as never, 's1')
     fireEvent.click(enhanceButton())
     expect(screen.getByText(zh['error.imagesOnly'])).toBeTruthy()
   })
 
   it('refuses drafts containing reference chips', () => {
     const input = makeFakeInput({ draft: '文本', occurrences: [{}] as never })
-    renderComposer(input, { setDraft: vi.fn() } as never)
+    renderComposer(input, { setDraft: vi.fn() } as never, 's1')
     fireEvent.click(enhanceButton())
     expect(screen.getByText(zh['error.occurrences'])).toBeTruthy()
   })
@@ -116,7 +148,7 @@ describe('enhance → apply → undo loop', () => {
   it('runs the full loop: loading → result → apply fills back and raises the undo bar → undo restores', async () => {
     const input = makeFakeInput({ draft: '旧原文' })
     const setDraft = vi.fn((text: string) => input.set({ draft: text }))
-    renderComposer(input, { setDraft } as never)
+    renderComposer(input, { setDraft } as never, 's1')
     vi.mocked(requestEnhance).mockResolvedValue({ text: '增强文本', provider: 'p', model: 'm', elapsedMs: 5 })
 
     fireEvent.click(enhanceButton())
@@ -137,7 +169,7 @@ describe('enhance → apply → undo loop', () => {
 
   it('marks the result stale (both ways) when the draft changes after the request started', async () => {
     const input = makeFakeInput({ draft: '旧原文' })
-    renderComposer(input, { setDraft: vi.fn() } as never)
+    renderComposer(input, { setDraft: vi.fn() } as never, 's1')
     vi.mocked(requestEnhance).mockResolvedValue({ text: '增强文本', provider: 'p', model: 'm', elapsedMs: 5 })
 
     fireEvent.click(enhanceButton())
@@ -154,7 +186,7 @@ describe('enhance → apply → undo loop', () => {
   it('applying over a diverged draft pushes the CURRENT draft as undo original', async () => {
     const input = makeFakeInput({ draft: '旧原文' })
     const setDraft = vi.fn((text: string) => input.set({ draft: text }))
-    renderComposer(input, { setDraft } as never)
+    renderComposer(input, { setDraft } as never, 's1')
     vi.mocked(requestEnhance).mockResolvedValue({ text: '增强文本', provider: 'p', model: 'm', elapsedMs: 5 })
 
     fireEvent.click(enhanceButton())
@@ -169,7 +201,7 @@ describe('enhance → apply → undo loop', () => {
 
   it('ignores a click while this session is already enhancing (no orphaned panel swap)', async () => {
     const input = makeFakeInput({ draft: '草稿' })
-    renderComposer(input, { setDraft: vi.fn() } as never)
+    renderComposer(input, { setDraft: vi.fn() } as never, 's1')
     vi.mocked(requestEnhance).mockReturnValue(new Promise(() => {}))
 
     fireEvent.click(enhanceButton())

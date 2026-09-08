@@ -29,7 +29,7 @@ export function EnhanceButton(props: EnhanceButtonProps): ReactNode {
   const { t, sessionId, useInput, inputActions } = props
   // 0.1.1-rc.2 carries sessionId on the props; 0.1.2-rc.1 dropped it. Use the
   // host id for UI keying when present, else a stable per-mount fallback.
-  const uiKey = useSessionKey(sessionId)
+  const uiKey = useSessionKey(sessionId, inputActions)
   const wireId = serverSessionId(sessionId)
   const draft = useInput((state) => state.draft)
   const phase = useInput((state) => state.phase)
@@ -85,7 +85,7 @@ export function EnhanceButton(props: EnhanceButtonProps): ReactNode {
         ui.settleError(uiKey, detail)
       },
     )
-  }, [anyBusy, draft, imageCount, occurrenceCount, phase, uiKey, settings, t])
+  }, [anyBusy, draft, imageCount, occurrenceCount, phase, uiKey, wireId, settings, t])
 
   // The session registry holds a stable identity; run always dispatches to
   // the latest start callback. The refresh rides an effect (never the render
@@ -119,7 +119,7 @@ export function EnhanceButton(props: EnhanceButtonProps): ReactNode {
     ui.pushUndo(uiKey, { original: draft, applied: panel.result.text })
     inputActions.setDraft(panel.result.text)
     ui.closePanel()
-  }, [draft, inputActions, panel, sessionId])
+  }, [draft, inputActions, panel, uiKey])
 
   if (!settings.enabled) return null
 
