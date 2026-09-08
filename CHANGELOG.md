@@ -2,7 +2,7 @@
 
 All notable changes are documented here. Versions follow [npm](https://www.npmjs.com/package/dsh-prompt-enhance); each release also has a [GitHub Release](https://github.com/rongxingda/dsh-prompt-enhance/releases) page with notes.
 
-## 0.1.12 (2026-09-08)
+## 0.2.0 (2026-09-08)
 
 Two additive features — context-aware rewrite and incremental output — plus the `stream-text` normalizer hardening those features depend on.
 
