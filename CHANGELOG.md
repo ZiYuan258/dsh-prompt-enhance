@@ -2,6 +2,18 @@
 
 All notable changes are documented here. Versions follow [npm](https://www.npmjs.com/package/dsh-prompt-enhance); each release also has a [GitHub Release](https://github.com/rongxingda/dsh-prompt-enhance/releases) page with notes.
 
+## 0.2.1 (2026-09-08)
+
+Internal hardening from the 0.2.0 self-audit — three performance fixes with no behavior change, a privacy clarification in the docs, and a devDependency cleanup. No new features, no config changes.
+
+**Performance.** `checkInputText` now walks the draft once by code point, counting characters and stripping invisible characters in the same pass — the old path allocated a full spread array per validation (`[...text]`, 12 k elements on a maximum-size draft) and then re-scanned with a regex. The rate-window expiry loop in the host route no longer `shift()`s expired stamps one at a time (O(N²) in the worst case at `rateLimitPerMinute = 600`); it finds the first surviving stamp and drains the expired prefix with a single `splice`. `appendDelta` on the browser side now coalesces same-turn deltas into one microtask flush, so a fast model pushing 100+ tokens/s triggers one React re-render per tick instead of one per token — synchronous reads of `getPanel().streaming` between the call and the flush intentionally return the previous value.
+
+**Docs.** The `contextAware` row in both READMEs and the Security Model section now state plainly that with the switch on, the plugin ships up to `contextMaxMessages` turns / `contextMaxChars` characters of the current conversation to the configured LLM verbatim — users with secrets in the active session should turn it off or scope the session first.
+
+**Dependencies.** `@deepseek-ai/dsh-agent` and `@deepseek-ai/dsh-client-runtime` are dropped from devDependencies: `src/` has had zero references to either since the 0.1.10 dual-compat rework (the `slots` / `sessionId` types they carried are satisfied at compile time through the remaining `dsh-client-ui-*` packages, and at runtime by the host itself). No change to `dependencies`, `peerDependencies`, or `engines.dsh`.
+
+Tests: 163 (new regression: 50 same-turn deltas → one `notify`, not 50).
+
 ## 0.2.0 (2026-09-08)
 
 Two additive features — context-aware rewrite and incremental output — plus the `stream-text` normalizer hardening those features depend on.
