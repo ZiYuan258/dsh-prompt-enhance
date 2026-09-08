@@ -15,7 +15,7 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { EnhanceError } from '../shared/protocol'
 import { checkInputText } from '../shared/validate'
-import { EnhanceClientError, requestEnhance } from './enhance-client'
+import { EnhanceClientError, requestEnhance, requestEnhanceStream } from './enhance-client'
 import { ResultPanel } from './ResultPanel'
 import * as ui from './ui-state'
 import { getClientSettings, subscribeClientSettings } from './settings'
@@ -76,16 +76,25 @@ export function EnhanceButton(props: EnhanceButtonProps): ReactNode {
     }
     const controller = new AbortController()
     ui.openLoading({ sessionId: uiKey, original: draft, abort: () => controller.abort() })
-    requestEnhance({ sessionId: wireId, text: draft }, controller.signal).then(
-      (result) => ui.settleResult(uiKey, result),
-      (error: unknown) => {
-        const detail: EnhanceError = error instanceof EnhanceClientError
-          ? error.detail
-          : { code: 'internal', message: error instanceof Error ? error.message : String(error) }
-        ui.settleError(uiKey, detail)
-      },
-    )
-  }, [anyBusy, draft, imageCount, occurrenceCount, phase, uiKey, wireId, settings, t])
+    const settle = (result: Parameters<typeof ui.settleResult>[1]): void => ui.settleResult(uiKey, result)
+    const fail = (error: unknown): void => {
+      const detail: EnhanceError = error instanceof EnhanceClientError
+        ? error.detail
+        : { code: 'internal', message: error instanceof Error ? error.message : String(error) }
+      ui.settleError(uiKey, detail)
+    }
+    // Progressive display when enabled: the panel fills in as the model
+    // writes, and degrades to the one-shot call on its own when the host or
+    // the transport cannot stream.
+    if (settings.streaming) {
+      requestEnhanceStream({ sessionId: wireId, text: draft }, {
+        signal: controller.signal,
+        onDelta: (delta: string): void => ui.appendDelta(uiKey, delta),
+      }).then(settle, fail)
+      return
+    }
+    requestEnhance({ sessionId: wireId, text: draft }, controller.signal).then(settle, fail)
+  }, [anyBusy, draft, imageCount, occurrenceCount, phase, settings, uiKey, wireId, t])
 
   // The session registry holds a stable identity; run always dispatches to
   // the latest start callback. The refresh rides an effect (never the render

@@ -45,6 +45,23 @@ export interface Config {
   maxConcurrent: number
   /** Sliding-window rate cap: enhancements per minute (host-side). */
   rateLimitPerMinute: number
+  /**
+   * Show the model's output in the panel as it streams instead of waiting for
+   * the whole rewrite. Display-only: the final text is still the normalized
+   * full result, so the output the user applies never changes.
+   */
+  streaming: boolean
+  /**
+   * Read the current conversation's recent history and use it to ground the
+   * rewrite (resolve references, supply the established stack/constraints).
+   * With no session, no history, or this switch off, the call degrades to the
+   * original single-prompt enhancement.
+   */
+  contextAware: boolean
+  /** Context window breadth: how many recent turns may ground the rewrite; 0 admits none. */
+  contextMaxMessages: number
+  /** Context window depth: character budget of the assembled history snippet; 0 admits none. */
+  contextMaxChars: number
 }
 
 /** Field defaults, the source of truth for schema defaults and client mirrors. */
@@ -59,6 +76,10 @@ export const DEFAULT_CONFIG: Config = {
   shortcut: 'ctrl+alt+e',
   maxConcurrent: 2,
   rateLimitPerMinute: 10,
+  streaming: true,
+  contextAware: true,
+  contextMaxMessages: 8,
+  contextMaxChars: 4000,
 }
 
 /** The settings section schema (rendered by the built-in plugin config page). */
@@ -75,6 +96,10 @@ export const Config: z<Config> = z.object({
   shortcut: z.string().default(DEFAULT_CONFIG.shortcut).description('触发快捷键（如 ctrl+alt+e；须包含 ctrl/alt/meta 中至少一个修饰键，shift 仅可作附加，纯字母/数字或 shift+字母会被忽略；留空禁用）'),
   maxConcurrent: z.number().step(1).min(1).max(16).default(DEFAULT_CONFIG.maxConcurrent).description('宿主侧并发上限：同时进行的增强调用数，超出的请求返回 429'),
   rateLimitPerMinute: z.number().step(1).min(1).max(600).default(DEFAULT_CONFIG.rateLimitPerMinute).description('每分钟增强次数上限（滑动窗口），超出返回 429'),
+  streaming: z.boolean().default(DEFAULT_CONFIG.streaming).description('增量展示：模型边写边在面板显示（仅影响显示节奏，最终结果不变；宿主或网络不支持时自动回退为一次性返回）'),
+  contextAware: z.boolean().default(DEFAULT_CONFIG.contextAware).description('上下文感知：读取当前会话近期对话，用于消解指代、补全省略与术语约束；无历史或历史不足时自动回退为单条增强，不臆造信息'),
+  contextMaxMessages: z.number().step(1).min(0).max(50).default(DEFAULT_CONFIG.contextMaxMessages).description('上下文窗口（条数）：最多参考最近多少条 user/assistant 轮次；0 表示不参考'),
+  contextMaxChars: z.number().step(1).min(0).max(100000).default(DEFAULT_CONFIG.contextMaxChars).description('上下文窗口（字数）：历史片段的字符预算，从最新一条向前装配；0 表示不参考'),
 })
 
 /**
@@ -127,6 +152,10 @@ export function resolveConfig(config: Config): Config {
     shortcut: typeof config.shortcut === 'string' ? config.shortcut : '',
     maxConcurrent: intInRange(config.maxConcurrent, 'maxConcurrent', 1, 16),
     rateLimitPerMinute: intInRange(config.rateLimitPerMinute, 'rateLimitPerMinute', 1, 600),
+    streaming: typeof config.streaming === 'boolean' ? config.streaming : DEFAULT_CONFIG.streaming,
+    contextAware: typeof config.contextAware === 'boolean' ? config.contextAware : DEFAULT_CONFIG.contextAware,
+    contextMaxMessages: intInRange(config.contextMaxMessages, 'contextMaxMessages', 0, 50),
+    contextMaxChars: intInRange(config.contextMaxChars, 'contextMaxChars', 0, 100000),
   }
 }
 

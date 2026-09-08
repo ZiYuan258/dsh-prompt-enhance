@@ -5,7 +5,7 @@
  * @module dsh-prompt-enhance/client/enhance-client
  */
 
-import { ENHANCE_ENDPOINT, type EnhanceError, type EnhanceErrorCode, type EnhanceRequestBody, type EnhanceResult } from '../shared/protocol'
+import { ENHANCE_ENDPOINT, ENHANCE_STREAM_ENDPOINT, type EnhanceError, type EnhanceErrorCode, type EnhanceRequestBody, type EnhanceResult, type EnhanceStreamEvent } from '../shared/protocol'
 
 /** Typed fetch failure carrying the wire error. */
 export class EnhanceClientError extends Error {
@@ -72,6 +72,115 @@ async function readEnvelope(response: Response): Promise<EnhanceResult> {
     throw new EnhanceClientError(parseError(envelope.error))
   }
   throw new EnhanceClientError({ code: 'internal', message: `宿主服务返回异常（HTTP ${response.status}）。` })
+}
+
+/** One SSE frame: the event name line and the `data:` payload line. */
+interface StreamFrame {
+  event: string
+  data: string
+}
+
+/** Split one buffer into complete SSE frames; the remainder stays buffered. */
+function takeFrames(buffer: string): { frames: StreamFrame[]; rest: string } {
+  const frames: StreamFrame[] = []
+  let rest = buffer
+  for (let index = rest.indexOf('\n\n'); index !== -1; index = rest.indexOf('\n\n')) {
+    const raw = rest.slice(0, index)
+    rest = rest.slice(index + 2)
+    let event = 'message'
+    const data: string[] = []
+    for (const line of raw.split('\n')) {
+      if (line.startsWith(':')) continue
+      if (line.startsWith('event:')) event = line.slice(6).trim()
+      else if (line.startsWith('data:')) data.push(line.slice(5).trim())
+    }
+    if (data.length > 0) frames.push({ event, data: data.join('\n') })
+  }
+  return { frames, rest }
+}
+
+/** Narrow one stream frame into a typed event; unparseable frames are skipped. */
+function parseFrame(frame: StreamFrame): EnhanceStreamEvent | undefined {
+  if (frame.event !== 'delta' && frame.event !== 'done' && frame.event !== 'error') return undefined
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(frame.data)
+  } catch {
+    return undefined
+  }
+  const record = parsed as { type?: unknown } | null
+  if (record === null || typeof record !== 'object' || record.type !== frame.event) return undefined
+  return record as EnhanceStreamEvent
+}
+
+/** Incremental enhancement options. */
+export interface EnhanceStreamOptions {
+  /** Caller cancellation (panel cancel button / unmount). */
+  signal?: AbortSignal
+  /** Receives each newly displayable piece of text. */
+  onDelta: (text: string) => void
+}
+
+/**
+ * Request one enhancement and show it while it is written.
+ *
+ * Degrades to {@link requestEnhance} whenever the incremental path is not
+ * actually available: an older host without the stream route, a proxy that
+ * buffered the response into one blob, or a browser without a readable fetch
+ * body. The result is the same normalized body either way — only the display
+ * is progressive.
+ * @param body - the session id and the raw draft text.
+ * @param options - cancellation and the delta sink.
+ * @returns the enhancement result.
+ * @throws EnhanceClientError with a displayable message on every failure.
+ */
+export async function requestEnhanceStream(body: EnhanceRequestBody, options: EnhanceStreamOptions): Promise<EnhanceResult> {
+  let response: Response
+  try {
+    response = await fetch(ENHANCE_STREAM_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
+      body: JSON.stringify(body),
+      signal: options.signal,
+    })
+  } catch (error) {
+    if (options.signal?.aborted) {
+      throw new EnhanceClientError({ code: 'internal', message: '已取消增强；原输入未改动。' })
+    }
+    void error
+    throw new EnhanceClientError({ code: 'internal', message: '无法连接宿主服务，请确认 dsh web 正在运行后重试。' })
+  }
+  const contentType = String(response.headers.get('content-type') ?? '').toLowerCase()
+  const stream = response.body
+  const streamable = response.ok && stream !== null && stream !== undefined && contentType.includes('event-stream')
+  if (stream === null || stream === undefined || !streamable) {
+    // Not a stream (old host, buffered proxy, or a rejection that predates
+    // the stream): release the body and take the one-shot path instead.
+    void stream?.cancel?.().catch(() => {})
+    return requestEnhance(body, options.signal)
+  }
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const { frames, rest } = takeFrames(buffer)
+      buffer = rest
+      for (const frame of frames) {
+        const event = parseFrame(frame)
+        if (event === undefined) continue
+        if (event.type === 'delta') options.onDelta(event.text)
+        else if (event.type === 'done') return parseResult(event.value)
+        else throw new EnhanceClientError(parseError(event.error))
+      }
+    }
+  } finally {
+    void reader.cancel().catch(() => {})
+  }
+  throw new EnhanceClientError({ code: 'internal', message: '宿主服务提前关闭了增强流，请重试；原输入未改动。' })
 }
 
 /**

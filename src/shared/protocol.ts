@@ -8,6 +8,13 @@
 /** Host route path the browser half POSTs the draft to. */
 export const ENHANCE_ENDPOINT = '/prompt-enhance/enhance'
 
+/**
+ * Host route path of the incremental variant: same request body, but the
+ * response is an SSE stream of {@link EnhanceStreamEvent} frames so the panel
+ * can show the rewrite while it is being written.
+ */
+export const ENHANCE_STREAM_ENDPOINT = '/prompt-enhance/enhance-stream'
+
 /** Request body of one enhance call. */
 export interface EnhanceRequestBody {
   /** Session whose model route should serve the call; absent forces settings/defaults. */
@@ -77,3 +84,14 @@ export interface EnhanceError {
 export type EnhanceResponse =
   | { ok: true; value: EnhanceResult }
   | { ok: false; error: EnhanceError }
+
+/**
+ * One SSE frame of the incremental route. `delta` carries newly displayable
+ * text (already safe to show: leading/trailing fences are withheld), `done`
+ * carries the authoritative result — the SAME normalized body the one-shot
+ * route returns — and `error` carries the structured failure.
+ */
+export type EnhanceStreamEvent =
+  | { type: 'delta'; text: string }
+  | { type: 'done'; value: EnhanceResult }
+  | { type: 'error'; error: EnhanceError }

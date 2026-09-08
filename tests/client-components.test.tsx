@@ -15,9 +15,10 @@ import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { EnhanceButton } from '../src/client/EnhanceButton'
 import { UndoBar } from '../src/client/UndoBar'
-import { requestEnhance } from '../src/client/enhance-client'
+import { requestEnhance, requestEnhanceStream } from '../src/client/enhance-client'
 import { zh } from '../src/client/locales'
 import * as ui from '../src/client/ui-state'
+import { DEFAULT_CLIENT_SETTINGS, setClientSettings } from '../src/client/settings'
 
 vi.mock('../src/client/enhance-client', () => ({
   EnhanceClientError: class extends Error {
@@ -28,6 +29,7 @@ vi.mock('../src/client/enhance-client', () => ({
     }
   },
   requestEnhance: vi.fn(),
+  requestEnhanceStream: vi.fn(),
 }))
 
 const t = ((key: string, params?: Record<string, unknown>): string => {
@@ -84,8 +86,12 @@ function renderComposer(
 
 const enhanceButton = (): HTMLButtonElement => screen.getByRole('button', { name: zh['button.title'] }) as HTMLButtonElement
 
+// The one-shot path is the baseline every existing assertion was written
+// against; the incremental path gets its own describe with streaming on.
 beforeEach(() => {
   vi.mocked(requestEnhance).mockReset()
+  vi.mocked(requestEnhanceStream).mockReset()
+  setClientSettings({ ...DEFAULT_CLIENT_SETTINGS, streaming: false })
 })
 
 describe('dsh 0.1.2-rc.1 dual-compat (host omits sessionId)', () => {
@@ -210,5 +216,41 @@ describe('enhance → apply → undo loop', () => {
     // The loading panel is untouched — no error panel swap, request not orphaned.
     expect(screen.getByText(zh['panel.loading'])).toBeTruthy()
     expect(screen.queryByText(zh['error.phase'])).toBeNull()
+  })
+})
+
+describe('incremental streaming display', () => {
+  afterEach(cleanup)
+
+  it('shows partial text while the call is in flight and settles on the final body', async () => {
+    setClientSettings({ ...DEFAULT_CLIENT_SETTINGS, streaming: true })
+    const input = makeFakeInput({ draft: '旧原文' })
+    renderComposer(input, { setDraft: vi.fn() } as never, 's2')
+    const result = { text: '增强文本', provider: 'p', model: 'm', elapsedMs: 5 }
+    let release!: (value: typeof result) => void
+    const gate = new Promise<typeof result>((resolve) => { release = resolve })
+    vi.mocked(requestEnhanceStream).mockImplementation(async (_body, options) => {
+      options.onDelta('增强')
+      return gate
+    })
+
+    fireEvent.click(enhanceButton())
+    // The first tokens are on screen long before the call settles.
+    expect(await screen.findByText('增强')).toBeTruthy()
+    expect(screen.getByText(zh['panel.streaming'])).toBeTruthy()
+    expect(requestEnhance).not.toHaveBeenCalled()
+
+    release(result)
+    // …and the settled panel replaces the partial view with the real result.
+    expect(await screen.findByText(zh['panel.enhanced'])).toBeTruthy()
+    expect(screen.queryByText(zh['panel.streaming'])).toBeNull()
+  })
+
+  it('drops deltas that arrive after the panel moved on', () => {
+    ui.openLoading({ sessionId: 'late', original: 'x', abort: () => {} })
+    ui.settleResult('late', { text: 'done', provider: 'p', model: 'm', elapsedMs: 1 })
+    ui.appendDelta('late', 'stale text')
+    expect(ui.getPanel()?.streaming).toBeUndefined()
+    ui.closePanel()
   })
 })

@@ -12,6 +12,8 @@ export interface ClientSettings {
   enabled: boolean
   maxInputChars: number
   shortcut: string
+  /** Show the model's output as it streams (host may still fall back). */
+  streaming: boolean
 }
 
 // Compile-time guarantee: the mirror only tracks keys that exist in the host
@@ -25,6 +27,7 @@ export const DEFAULT_CLIENT_SETTINGS: ClientSettings = {
   enabled: true,
   maxInputChars: 12000,
   shortcut: 'ctrl+alt+e',
+  streaming: true,
 }
 
 const listeners = new Set<() => void>()
@@ -71,5 +74,6 @@ export function decodeClientSettings(section: unknown): ClientSettings {
       ? Math.floor(record.maxInputChars)
       : DEFAULT_CLIENT_SETTINGS.maxInputChars,
     shortcut: typeof record.shortcut === 'string' ? record.shortcut : DEFAULT_CLIENT_SETTINGS.shortcut,
+    streaming: typeof record.streaming === 'boolean' ? record.streaming : DEFAULT_CLIENT_SETTINGS.streaming,
   }
 }

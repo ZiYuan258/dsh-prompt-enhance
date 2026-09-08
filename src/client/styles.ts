@@ -117,6 +117,16 @@ export const CSS = `
   flex: 1; padding: 28px 16px; font-size: 13px;
 }
 .dsh-pe-loading .dsh-pe-hint { font-size: 11px; opacity: 0.55; }
+/* Incremental view: the streamed text takes the whole body, left-aligned. */
+.dsh-pe-stream {
+  display: flex; flex-direction: column;
+  flex: 1; min-height: 0; width: 100%;
+}
+.dsh-pe-stream .dsh-pe-col-title {
+  display: flex; align-items: center; gap: 6px;
+  padding-left: 0;
+}
+.dsh-pe-spin.small { width: 11px; height: 11px; border-width: 1px; }
 .dsh-pe-spin {
   width: 22px; height: 22px; border-radius: 50%;
   border: 2px solid var(--pe-separator); border-top-color: #6ea8ff;

@@ -64,6 +64,14 @@ export interface EnhanceCallOptions {
   signal?: AbortSignal
   /** Session identity stamped onto the request for adapter routing. */
   sessionId?: string
+  /** The framed conversation-context snippet, when the call carries one. */
+  context?: string
+  /**
+   * Receives each text delta as the model produces it (display only). A throw
+   * from this callback is swallowed — a broken display path must never fail
+   * the enhancement itself.
+   */
+  onDelta?: (delta: string) => void
 }
 
 /**
@@ -101,7 +109,7 @@ export async function enhanceText(llm: LlmStreamFace, options: EnhanceCallOption
     signal.throwIfAborted()
     const messages = [
       createUserMessage({
-        content: [{ type: 'text', text: frameUserPrompt(options.text) }],
+        content: [{ type: 'text', text: frameUserPrompt(options.text, options.context) }],
         source: { kind: 'plugin', plugin: 'dsh-prompt-enhance' },
       }),
     ]
@@ -139,6 +147,16 @@ export async function enhanceText(llm: LlmStreamFace, options: EnhanceCallOption
           break
         }
         assembler.push(next.value)
+        // Display-only tap: the stream already arrives incrementally, so the
+        // panel can show the rewrite as it is written instead of waiting for
+        // the final normalization.
+        if (next.value.type === 'text-delta' && options.onDelta !== undefined) {
+          try {
+            options.onDelta(next.value.text)
+          } catch {
+            // Never let a broken display path fail the enhancement.
+          }
+        }
       }
     } finally {
       if (onAbort !== undefined && !signal.aborted) signal.removeEventListener('abort', onAbort)

@@ -50,10 +50,39 @@ describe('resolveConfig', () => {
     expect(resolved).not.toHaveProperty('legacySetting')
     expect(resolved.enabled).toBe(DEFAULT_CONFIG.enabled)
     expect(Object.keys(resolved).sort()).toEqual([
-      'enabled', 'maxConcurrent', 'maxInputChars', 'maxOutputTokens', 'model',
+      'contextAware', 'contextMaxChars', 'contextMaxMessages', 'enabled',
+      'maxConcurrent', 'maxInputChars', 'maxOutputTokens', 'model',
       'provider', 'rateLimitPerMinute',
-      'shortcut', 'strategyMode', 'systemPrompt', 'temperature', 'timeoutMs',
+      'shortcut', 'strategyMode', 'streaming', 'systemPrompt', 'temperature', 'timeoutMs',
     ])
+  })
+
+  it('defaults the streaming and context window to their documented values', () => {
+    const resolved = resolveConfig({ ...DEFAULT_CONFIG })
+    expect(resolved.streaming).toBe(true)
+    expect(resolved.contextAware).toBe(true)
+    expect(resolved.contextMaxMessages).toBe(8)
+    expect(resolved.contextMaxChars).toBe(4000)
+  })
+
+  it('tolerates missing/absent streaming and context flags on older sections', () => {
+    const partial = { ...DEFAULT_CONFIG } as Partial<typeof DEFAULT_CONFIG> & Record<string, unknown>
+    delete partial.streaming
+    delete partial.contextAware
+    const resolved = resolveConfig(partial as typeof DEFAULT_CONFIG)
+    expect(resolved.streaming).toBe(true)
+    expect(resolved.contextAware).toBe(true)
+  })
+
+  it('accepts a zero-width context window (context disabled by budget)', () => {
+    const resolved = resolveConfig({ ...DEFAULT_CONFIG, contextMaxMessages: 0, contextMaxChars: 0 })
+    expect(resolved.contextMaxMessages).toBe(0)
+    expect(resolved.contextMaxChars).toBe(0)
+  })
+
+  it('rejects an out-of-range context window', () => {
+    expect(() => resolveConfig({ ...DEFAULT_CONFIG, contextMaxMessages: 99 })).toThrow(/contextMaxMessages/)
+    expect(() => resolveConfig({ ...DEFAULT_CONFIG, contextMaxChars: -1 })).toThrow(/contextMaxChars/)
   })
 })
 

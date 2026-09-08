@@ -9,7 +9,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { randomUUID } from 'node:crypto'
 import { effectiveSystemPrompt, type Config } from './config'
-import { DEFAULT_SYSTEM_PROMPT } from './prompts'
+import { DEFAULT_SYSTEM_PROMPT, withContextRules } from './prompts'
+import { buildConversationContext } from './context'
 import { EnhanceFailure, enhanceText, resolveRoute, toEnhanceError, type RoutePair } from './enhancer'
 import type { EnhanceResult } from './shared/protocol'
 import { countText } from './shared/validate'
@@ -30,7 +31,11 @@ interface EpochHeaderLike {
  * flip in either direction degrades to the other branch instead of a TypeError.
  */
 interface SessionsFace {
-  get(id: string): { requestHeader?: (() => EpochHeaderLike | undefined) | EpochHeaderLike } | undefined
+  get(id: string): {
+    requestHeader?: (() => EpochHeaderLike | undefined) | EpochHeaderLike
+    /** The derived LLM message history; absent on hosts that never expose it. */
+    deriveMessages?: () => readonly unknown[]
+  } | undefined
 }
 
 /** Structural face of the settings provider for cross-namespace reads. */
@@ -73,6 +78,41 @@ export function defaultRouteOf(ctx: Context): RoutePair | undefined {
   return routeOf(value as { provider?: unknown; model?: unknown } | undefined)
 }
 
+/**
+ * The conversation-context snippet for one enhancement, or nothing at all.
+ *
+ * Every failure mode here degrades to the ORIGINAL single-prompt behaviour:
+ * context switched off, no session id (the 0.1.2-rc.1 input slots no longer
+ * carry one), unknown session, missing/throws history, or a window too small
+ * to admit a single turn. Grounding is an optimization, never a requirement —
+ * an enhancement must never fail because history could not be read.
+ * @param ctx - registrant context (optional `sessions`).
+ * @param sessionId - the session the draft belongs to, when known.
+ * @param config - the resolved config (switch + window).
+ * @param draft - the raw draft being enhanced.
+ * @returns the framed snippet, or undefined to run unconstrained.
+ */
+export function conversationContextOf(ctx: Context, sessionId: string | undefined, config: Config, draft: string): string | undefined {
+  if (!config.contextAware) return undefined
+  if (sessionId === undefined || sessionId === '') return undefined
+  const session = (ctx.get('sessions') as SessionsFace | undefined)?.get(sessionId)
+  if (session === undefined) return undefined
+  let messages: readonly unknown[]
+  try {
+    const derived = session.deriveMessages?.()
+    if (derived === undefined || !Array.isArray(derived)) return undefined
+    messages = derived
+  } catch {
+    // A session-layer hiccup must not turn one enhance request into a 502.
+    return undefined
+  }
+  return buildConversationContext(
+    messages,
+    { maxMessages: config.contextMaxMessages, maxChars: config.contextMaxChars },
+    draft,
+  )
+}
+
 /** One orchestration request. */
 export interface RunEnhanceOptions {
   /** The raw draft to rewrite (already validated by the caller). */
@@ -83,6 +123,10 @@ export interface RunEnhanceOptions {
   signal?: AbortSignal
   /** Session identity stamped onto the request for adapter routing. */
   sessionId?: string
+  /** Pre-built context snippet; when absent it is derived from the session. */
+  context?: string
+  /** Receives each text delta for incremental display (display only). */
+  onDelta?: (delta: string) => void
 }
 
 /**
@@ -110,17 +154,24 @@ export async function runEnhance(ctx: Context, config: Config, options: RunEnhan
     if (llm === undefined) {
       throw new EnhanceFailure({ code: 'internal' })
     }
+    const context = options.context !== undefined
+      ? options.context
+      : conversationContextOf(ctx, options.sessionId, config, options.text)
     const result = await enhanceText(llm, {
       route,
-      system: effectiveSystemPrompt(config, DEFAULT_SYSTEM_PROMPT),
+      // The context rules ride along ONLY when there is context to reason
+      // about, so a context-free call keeps byte-identical instructions.
+      system: effectiveSystemPrompt(config, context === undefined ? DEFAULT_SYSTEM_PROMPT : withContextRules(DEFAULT_SYSTEM_PROMPT)),
       text: options.text,
       temperature: config.temperature,
       maxTokens: config.maxOutputTokens,
       timeoutMs: config.timeoutMs,
       signal: options.signal,
+      ...(context !== undefined ? { context } : {}),
+      ...(options.onDelta !== undefined ? { onDelta: options.onDelta } : {}),
       ...(options.sessionId !== undefined ? { sessionId: options.sessionId } : {}),
     })
-    console.info(`[prompt-enhance] ${requestId} in=${countText(options.text)} out=${countText(result.text)} ${result.elapsedMs}ms ok`)
+    console.info(`[prompt-enhance] ${requestId} in=${countText(options.text)} out=${countText(result.text)} ctx=${context === undefined ? 0 : 1} ${result.elapsedMs}ms ok`)
     return result
   } catch (error) {
     const wire = toEnhanceError(error)

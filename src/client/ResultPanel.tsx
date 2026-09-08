@@ -158,9 +158,23 @@ export function ResultPanel(props: ResultPanelProps): ReactNode {
         </header>
         {state.phase === 'loading' && (
           <div className="dsh-pe-loading">
-            <div className="dsh-pe-spin" aria-hidden />
-            <div>{t('panel.loading')}</div>
-            <div className="dsh-pe-hint">{t('panel.loading.hint')}</div>
+            {state.streaming === undefined || state.streaming === '' ? (
+              <>
+                <div className="dsh-pe-spin" aria-hidden />
+                <div>{t('panel.loading')}</div>
+                <div className="dsh-pe-hint">{t('panel.loading.hint')}</div>
+              </>
+            ) : (
+              // Incremental view: the text already generated, replaced by the
+              // normalized full body the moment the call settles.
+              <div className="dsh-pe-stream">
+                <div className="dsh-pe-col-title">
+                  <span className="dsh-pe-spin small" aria-hidden />
+                  {t('panel.streaming')}
+                </div>
+                <pre className="dsh-pe-col-text">{state.streaming}</pre>
+              </div>
+            )}
           </div>
         )}
         {state.phase === 'error' && state.error !== undefined && (

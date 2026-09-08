@@ -23,6 +23,12 @@ export interface PanelState {
   readonly abort?: () => void
   /** The composer draft changed after the request started — the result is based on the old text. */
   readonly stale?: boolean
+  /**
+   * Text already streamed from the model, shown while the call is still in
+   * flight. Display-only: the result phase replaces it with the normalized
+   * full body, which is what the user actually applies.
+   */
+  readonly streaming?: string
 }
 
 /** One mounted composer trigger (the input.right button's session presence). */
@@ -109,6 +115,18 @@ export function settleResult(sessionId: string, result: EnhanceResult): void {
 export function settleError(sessionId: string, error: EnhanceError): void {
   if (panelState?.sessionId !== sessionId || panelState.phase !== 'loading') return
   panelState = { sessionId, phase: 'error', original: panelState.original, error }
+  notify()
+}
+
+/**
+ * Append newly displayable text to the loading panel. Ignored once the panel
+ * moved on (settled, replaced, or closed), so a late delta from an aborted
+ * stream can never leak into another result.
+ */
+export function appendDelta(sessionId: string, text: string): void {
+  if (text === '') return
+  if (panelState === undefined || panelState.sessionId !== sessionId || panelState.phase !== 'loading') return
+  panelState = { ...panelState, streaming: (panelState.streaming ?? '') + text }
   notify()
 }
 

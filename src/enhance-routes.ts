@@ -8,7 +8,8 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
-import { ENHANCE_ENDPOINT } from './shared/protocol'
+import { ENHANCE_ENDPOINT, ENHANCE_STREAM_ENDPOINT, type EnhanceStreamEvent } from './shared/protocol'
+import { createStreamNormalizer } from './shared/stream-text'
 import { checkInputText } from './shared/validate'
 import { type Config } from './config'
 import { toEnhanceError } from './enhancer'
@@ -26,20 +27,48 @@ interface AdmissionGate {
 }
 
 /**
+ * Write one SSE frame. Payloads are JSON so a newline inside the text can
+ * never break the framing.
+ */
+function writeEvent(res: ServerResponse, event: EnhanceStreamEvent): void {
+  res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
+}
+
+/**
+ * Open the SSE response. `no-transform` and `x-accel-buffering` keep proxies
+ * from buffering the stream into one blob, which would defeat the point.
+ */
+function openStream(res: ServerResponse): void {
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache, no-transform',
+    connection: 'keep-alive',
+    'x-accel-buffering': 'no',
+  })
+  // A comment frame flushes the headers immediately so the client's reader
+  // resumes before the first model token arrives.
+  res.write(': open\n\n')
+}
+
+/**
  * Serve one enhance POST against the request envelope.
  * @param ctx - registrant context (llm, optional sessions/settings).
  * @param readConfig - per-request config reader.
  * @param req - the incoming request.
  * @param res - the outgoing response.
+ * @param stream - whether to answer with an SSE stream of incremental frames
+ *   instead of one JSON envelope. Both modes share the whole admission path;
+ *   only the response shape differs.
  */
-async function serveEnhance(ctx: Context, readConfig: () => Config, gate: AdmissionGate, req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function serveEnhance(ctx: Context, readConfig: () => Config, gate: AdmissionGate, req: IncomingMessage, res: ServerResponse, stream: boolean): Promise<void> {
   if (!isTrustedRequest(req)) {
     writeJson(res, 403, { ok: false, error: { code: 'internal', message: 'forbidden: loopback-only' } })
     return
   }
-  // One route, one exact endpoint: anything else under the prefix is unknown.
+  // One route, two exact endpoints (one-shot JSON / incremental SSE):
+  // anything else under the prefix is unknown.
   const pathname = new URL(req.url ?? '/', 'http://x').pathname
-  if (pathname !== ENHANCE_ENDPOINT) {
+  if (pathname !== ENHANCE_ENDPOINT && pathname !== ENHANCE_STREAM_ENDPOINT) {
     writeJson(res, 404, { ok: false, error: { code: 'internal', message: 'not found' } })
     return
   }
@@ -151,20 +180,44 @@ async function serveEnhance(ctx: Context, readConfig: () => Config, gate: Admiss
   }
   res.on('close', onConnectionClosed)
   try {
-    const value = await runEnhance(ctx, config, {
+    const runOptions = {
       text: record.text,
       sessionRoute: sessionRouteOf(ctx, sessionId),
       signal: callerAbort.signal,
       ...sessionId !== undefined ? { sessionId } : {},
-    })
-    writeJson(res, 200, { ok: true, value })
+    }
+    if (stream) {
+      // The stream already opens before the model call, so the client sees
+      // the first token instead of waiting for the whole rewrite.
+      openStream(res)
+      // Display-only normalization: withhold a fence the final body will not
+      // have. The authoritative text still comes from `normalizeOutput` at
+      // the end, so this cannot change what the user applies.
+      const display = createStreamNormalizer()
+      const value = await runEnhance(ctx, config, {
+        ...runOptions,
+        onDelta: (delta: string): void => {
+          const safe = display.push(delta)
+          if (safe !== '' && !res.writableEnded) writeEvent(res, { type: 'delta', text: safe })
+        },
+      })
+      if (!res.writableEnded) writeEvent(res, { type: 'done', value })
+    } else {
+      const value = await runEnhance(ctx, config, runOptions)
+      writeJson(res, 200, { ok: true, value })
+    }
     // Count only on success: failed calls must not consume the sliding window
     // (see the gate note above). `Date.now()` at completion, not admission,
     // keeps the window honest — a slow success still counts as one call.
     gate.stamps.push(Date.now())
   } catch (error) {
     const wire = toEnhanceError(error)
-    writeJson(res, wire.code === 'timeout' ? 504 : wire.code === 'unconfigured' ? 409 : 502, { ok: false, error: wire })
+    if (stream && res.headersSent) {
+      // Headers are already out: the failure has to ride the same stream.
+      if (!res.writableEnded) writeEvent(res, { type: 'error', error: wire })
+    } else {
+      writeJson(res, wire.code === 'timeout' ? 504 : wire.code === 'unconfigured' ? 409 : 502, { ok: false, error: wire })
+    }
   } finally {
     res.off('close', onConnectionClosed)
     gate.active -= 1
@@ -196,6 +249,9 @@ export function registerEnhanceRoute(ctx: Context, readConfig: () => Config): vo
   webserver.register({
     kind: 'prefix',
     path: ENHANCE_ENDPOINT.replace(/\/enhance$/, ''),
-    handler: (req: IncomingMessage, res: ServerResponse): Promise<void> => serveEnhance(ctx, readConfig, gate, req, res),
+    handler: (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+      const pathname = new URL(req.url ?? '/', 'http://x').pathname
+      return serveEnhance(ctx, readConfig, gate, req, res, pathname === ENHANCE_STREAM_ENDPOINT)
+    },
   })
 }
