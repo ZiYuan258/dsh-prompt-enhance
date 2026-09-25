@@ -1,7 +1,6 @@
 # dsh-prompt-enhance
 
-[![CI](https://github.com/rongxingda/dsh-prompt-enhance/actions/workflows/ci.yml/badge.svg)](https://github.com/rongxingda/dsh-prompt-enhance/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/dsh-prompt-enhance)](https://www.npmjs.com/package/dsh-prompt-enhance)
+[![CI](https://github.com/ZiYuan258/dsh-prompt-enhance/actions/workflows/ci.yml/badge.svg)](https://github.com/ZiYuan258/dsh-prompt-enhance/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
 
 **Prompt enhancement for the [DeepSeek Harness](https://github.com/deepseek-ai) web GUI** — one click turns a rough composer draft into a well-structured prompt: explicit role and goal, executable steps, output format, acceptance criteria, and edge cases. Your intent is never changed, nothing is fabricated, and the original draft is always preserved.
@@ -11,9 +10,11 @@ English | [简体中文](./README.zh-CN.md)
 > ### This is a fork
 >
 > A maintained fork of [`rongxingda/dsh-prompt-enhance`](https://github.com/rongxingda/dsh-prompt-enhance),
-> tracking **DSH 0.1.7-rc.1**. The upstream sources are Apache-2.0; the original
-> copyright and licence are retained in [LICENSE](./LICENSE), and the files
-> changed here are listed in [CHANGELOG.md](./CHANGELOG.md).
+> **verified on DSH 0.1.7-rc.1** — the API drift below was read off that live host
+> and reproduced against it. `0.1.7-rc.2` is published but **not yet exercised**;
+> see [CHANGELOG.md](./CHANGELOG.md) for what that means for CI. The upstream
+> sources are Apache-2.0; the original copyright and licence are retained in
+> [LICENSE](./LICENSE).
 >
 > What this fork adds on top of 0.2.1 — all of it drift the upstream baseline
 > (`dsh >= 0.1.1-rc.2`) never accounted for:
@@ -59,7 +60,7 @@ Good agent prompts state *who the model should be*, *what to deliver*, *in what 
 | 💸 **Cheap by default** | The rewrite runs with `reasoningEffort: off` — a rewrite is short and well-specified, and the model's own default effort cost ~11× the output tokens for no better result (measured on `deepseek-flash`: 252 vs 2897 tokens for one draft) |
 | 🛡️ **Draft safety** | Empty, over-length, images-only, and command-chip inputs are rejected locally; upstream failures are mapped to readable messages; the draft is never mutated on failure |
 
-![The preview panel running in dsh web: original and enhanced prompt side by side with model info, fill-back and copy actions](https://raw.githubusercontent.com/rongxingda/dsh-prompt-enhance/main/docs/evidence-prompt-enhance-panel.png)
+![The preview panel running in dsh web: original and enhanced prompt side by side with model info, fill-back and copy actions](https://raw.githubusercontent.com/ZiYuan258/dsh-prompt-enhance/main/docs/evidence-prompt-enhance-panel.png)
 
 ## How it works
 
@@ -95,23 +96,25 @@ The plugin is one npm package with two halves, following the dsh plugin conventi
 
 ## Install
 
-From npm (recommended):
+From this fork (recommended — the built `lib/` is committed, so nothing is built locally):
+
+```bash
+dsh plugin --profile web add github:ZiYuan258/dsh-prompt-enhance
+# restart dsh web
+```
+
+From npm — this installs the **upstream** release (`0.2.1`), which does not carry
+this fork's DSH 0.1.7 fixes. Use it only if you are deliberately tracking upstream:
 
 ```bash
 dsh plugin --profile web add dsh-prompt-enhance
 # restart dsh web
 ```
 
-From GitHub (the built `lib/` is committed, so no local build happens):
-
-```bash
-dsh plugin --profile web add github:rongxingda/dsh-prompt-enhance
-```
-
 From a local checkout (for development — changes rebuild + restart take effect):
 
 ```bash
-git clone https://github.com/rongxingda/dsh-prompt-enhance.git
+git clone https://github.com/ZiYuan258/dsh-prompt-enhance.git
 cd dsh-prompt-enhance && npm install && npm run build
 dsh plugin --profile web add link:C:\path\to\dsh-prompt-enhance
 ```
@@ -139,7 +142,7 @@ dsh plugin --profile web remove dsh-prompt-enhance
 
 ## Configuration
 
-Everything lives in the `prompt-enhance` settings namespace, edited from the web GUI's **Settings → 插件配置** page. Changes apply to the very next call — no restart. Every enhancement is one billable LLM call: `maxOutputTokens` bounds its cost, and the host-side concurrency/rate caps bound how often calls can be made.
+Everything lives in the `prompt-enhance` settings namespace, edited from this plugin's own **Prompt enhance** page in **Settings**. Changes apply to the very next call — no restart. Every enhancement is one billable LLM call: `maxOutputTokens` bounds its cost, and the host-side concurrency/rate caps bound how often calls can be made.
 
 | Field | Default | Description |
 |---|---|---|
@@ -215,7 +218,7 @@ The host route answers structured errors of the shape `{ code, message?, params?
 ## Troubleshooting
 
 **Button missing / shortcut dead**
-Settings → 插件配置 → `prompt-enhance` section: is `enabled` true? Is the plugin installed (`dsh plugin --profile web list`) and `dsh web` restarted? Any apply error in the browser console?
+Settings → **Prompt enhance**: is `enabled` true? Is the plugin installed (`dsh plugin --profile web list`) and `dsh web` restarted? Any apply error in the browser console?
 
 **"No model resolved for the enhancement"**
 Routing follows settings pair → session model → harness default; if all three are empty there is nothing to call. Pair `provider`/`model` in the settings, or send a message in the current session first so it carries a model route. Check the `agent-default-model` settings section.
@@ -322,7 +325,7 @@ Yes — it rides `ctx.llm`, so any provider the harness serves (DeepSeek officia
 
 After installing and restarting `dsh web`:
 
-1. Settings → 插件配置 shows the `prompt-enhance` section.
+1. Settings shows a **Prompt enhance** page.
 2. The ✨ button sits next to the send button; `Ctrl+Alt+E` triggers the same flow.
 3. Empty input → refusal panel; a valid draft → preview with model info; Apply fills back; Undo restores; Copy works.
 4. `/enhance <text>` renders a copyable result without touching model history.

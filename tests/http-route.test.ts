@@ -96,6 +96,27 @@ async function call(server: Server, method: string, body?: string, path = '/prom
   return { status: response.status, json: (await response.json()) as unknown, headers: response.headers }
 }
 
+/**
+ * Read one SSE response to its END, or fail.
+ *
+ * `done` is settled by the stream closing, not by the last frame arriving, so a
+ * server that writes `done` and never calls `end()` hangs here instead of
+ * passing — which is exactly the regression this guards. Botched framing would
+ * also raise here, because the reader would never settle.
+ */
+async function readStreamToEnd(server: Server, body: string): Promise<string> {
+  const { port } = server.address() as AddressInfo
+  const response = await fetch(`http://127.0.0.1:${port}/prompt-enhance/enhance-stream`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
+    body,
+  })
+  expect(response.status).toBe(200)
+  expect(response.headers.get('content-type')).toContain('text/event-stream')
+  const text = await response.text()
+  return text
+}
+
 describe('POST /prompt-enhance/enhance (real http)', () => {
   let server: Server
   beforeAll(() => {
@@ -457,5 +478,42 @@ describe('route registration', () => {
     apply(second.ctx as never, CONFIG)
     expect(first.captured).toHaveLength(1)
     expect(second.captured).toHaveLength(1)
+  })
+})
+
+/**
+ * The SSE branch had no coverage at all, which is why a missing `res.end()` went
+ * unnoticed: the client stops reading on `done`, so an un-ended response looks
+ * fine from the browser while the connection stays open until the socket times
+ * out. Every test here therefore reads the response TO ITS END.
+ */
+describe('POST /prompt-enhance/enhance-stream (real http)', () => {
+  it('closes the response after the done frame, so the reader settles', { timeout: 10000 }, async () => {
+    const server = mount(makeLlm(() => streamOf(['第一段', '第二段'], [{ type: 'finish', reason: { kind: 'stop' } }])))
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    try {
+      const text = await readStreamToEnd(server, JSON.stringify({ text: '写个爬虫' }))
+      expect(text).toContain('event: delta')
+      expect(text).toContain('event: done')
+      // The normalized final body rides the done frame, not the deltas.
+      expect(text).toContain('第一段第二段')
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  it('closes the response after an error frame too', { timeout: 10000 }, async () => {
+    const failing = makeLlm(() => streamOf([], [{ type: 'finish', reason: { kind: 'error', failure: { message: '401 unauthorized', code: 'AUTH' } } }]))
+    const server = mount(failing)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    try {
+      // resolve() only returns once the stream ends; without `res.end()` on the
+      // error path this would hang rather than fail.
+      const text = await readStreamToEnd(server, JSON.stringify({ text: '写个爬虫' }))
+      expect(text).toContain('event: error')
+      expect(text).toContain('auth')
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
   })
 })

@@ -1,7 +1,7 @@
 {
   "name": "dsh-prompt-enhance",
   "description": "Prompt enhancement for the dsh web GUI: rewrite the composer draft into a well-structured prompt through the harness LLM service, preview the before/after, then fill back, copy, or undo. Original draft is always preserved.",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -82,12 +82,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rongxingda/dsh-prompt-enhance.git"
+    "url": "git+https://github.com/ZiYuan258/dsh-prompt-enhance.git"
   },
   "bugs": {
-    "url": "https://github.com/rongxingda/dsh-prompt-enhance/issues"
+    "url": "https://github.com/ZiYuan258/dsh-prompt-enhance/issues"
   },
-  "homepage": "https://github.com/rongxingda/dsh-prompt-enhance#readme",
+  "homepage": "https://github.com/ZiYuan258/dsh-prompt-enhance#readme",
   "scripts": {
     "build": "tsc -p . && node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",

@@ -209,7 +209,16 @@ async function serveEnhance(ctx: Context, readConfig: () => Config, gate: Admiss
           if (safe !== '' && !res.writableEnded) writeEvent(res, { type: 'delta', text: safe })
         },
       })
-      if (!res.writableEnded) writeEvent(res, { type: 'done', value })
+      if (!res.writableEnded) {
+        writeEvent(res, { type: 'done', value })
+        // Close the response from the server side. The client stops reading on
+        // `done`, but an un-ended SSE response leaves the connection open until
+        // the socket times out, and an intermediary that buffers until the
+        // response completes would hold the whole rewrite back — the opposite of
+        // what this branch exists for. The stream's lifetime belongs to the
+        // protocol, not to the client remembering to cancel.
+        res.end()
+      }
     } else {
       const value = await runEnhance(ctx, config, runOptions)
       writeJson(res, 200, { ok: true, value })
@@ -221,8 +230,13 @@ async function serveEnhance(ctx: Context, readConfig: () => Config, gate: Admiss
   } catch (error) {
     const wire = toEnhanceError(error)
     if (stream && res.headersSent) {
-      // Headers are already out: the failure has to ride the same stream.
-      if (!res.writableEnded) writeEvent(res, { type: 'error', error: wire })
+      // Headers are already out: the failure has to ride the same stream, and
+      // the stream must be closed here for the same reason the success path
+      // closes it — the client is waiting on a protocol end, not on a timeout.
+      if (!res.writableEnded) {
+        writeEvent(res, { type: 'error', error: wire })
+        res.end()
+      }
     } else {
       writeJson(res, wire.code === 'timeout' ? 504 : wire.code === 'unconfigured' ? 409 : 502, { ok: false, error: wire })
     }

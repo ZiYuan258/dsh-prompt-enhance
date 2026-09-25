@@ -1,13 +1,21 @@
 # Changelog
 
-All notable changes are documented here. Versions follow [npm](https://www.npmjs.com/package/dsh-prompt-enhance); each release also has a [GitHub Release](https://github.com/rongxingda/dsh-prompt-enhance/releases) page with notes.
+All notable changes are documented here. Versions follow the fork's own numbering from 0.3.0 on — npm carries the upstream `dsh-prompt-enhance`, so these numbers are not published there. Apache-2.0 attribution and the list of modified files live in [README.md](./README.md).
 
-## fork-0.2.1+dsh0.1.7 (2026-09-25)
+## 0.3.0 (2026-09-26)
 
-Fork maintenance release: makes the 0.2.1 tree work on DSH **0.1.7-rc.1**, which
+Fork maintenance release. Makes the 0.2.1 tree work on DSH **0.1.7-rc.1**, which
 the upstream baseline (`dsh >= 0.1.1-rc.2`) predates. Four of these are hard
-failures on the current host, and all four were silent — the plugin either took
-the whole composer down or degraded one error message into another.
+failures on that host, and all four were silent — the plugin either took the
+whole composer down or collapsed every specific error into one generic line.
+
+> **Compatibility claim, stated precisely.** The drift below was read from the
+> **live 0.1.7-rc.1 host** through Cordis Inspect and reproduced against it, so
+> rc.1 is the version this release is verified on. `@deepseek-ai/dsh-*@0.1.7-rc.2`
+> is published, but this release has **not** been exercised against it, and the
+> devDependencies still resolve to the `0.1.1-rc.2` API surface — CI therefore
+> proves the code compiles and its tests pass, **not** that these rc.1 fixes hold
+> on rc.2. Bumping the baseline is a separate change, with a smoke test.
 
 **Fixed — the composer button crashed the input box.** `InputState.imageIds` was
 renamed to `attachmentIds` with no alias, so `state.imageIds.length` threw
