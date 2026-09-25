@@ -9,9 +9,12 @@
 
 > ### 这是一个 Fork
 >
-> 本仓库是 [`rongxingda/dsh-prompt-enhance`](https://github.com/rongxingda/dsh-prompt-enhance)
-> 的维护分支,**已在 DSH 0.1.7-rc.1 上验证**——下面的 API 漂移都是从那个版本的运行中宿主读出来并实测复现的。
-> `0.1.7-rc.2` 已发布但**尚未验证**;这对 CI 意味着什么见 [CHANGELOG.md](./CHANGELOG.md)。
+> 本仓库是 [`rongxingda/dsh-prompt-enhance`](https://github.com/rongxingda/dsh-prompt-enhance) 的维护分支。
+>
+> - **已在 DSH 0.1.7-rc.1 上验证**——下面的 API 漂移都是从那个版本的运行中宿主读出来并实测复现的。
+> - **已针对 DSH 0.1.7-rc.2 编译与测试**——所有 DSH devDependency 都锁定在该版本,类型检查与全套测试都跑在它的 API 面上。
+>   但**尚未在 rc.2 宿主机上运行过**:那一步需要升级本机 DSH,而不是补更多单测。详见 [CHANGELOG.md](./CHANGELOG.md)。
+>
 > 上游为 Apache-2.0,原始版权与许可证保留在 [LICENSE](./LICENSE)。
 >
 > 在 0.2.1 基础上补的东西,都是上游基线(`dsh >= 0.1.1-rc.2`)没覆盖到的漂移:

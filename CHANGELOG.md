@@ -9,13 +9,20 @@ the upstream baseline (`dsh >= 0.1.1-rc.2`) predates. Four of these are hard
 failures on that host, and all four were silent — the plugin either took the
 whole composer down or collapsed every specific error into one generic line.
 
-> **Compatibility claim, stated precisely.** The drift below was read from the
-> **live 0.1.7-rc.1 host** through Cordis Inspect and reproduced against it, so
-> rc.1 is the version this release is verified on. `@deepseek-ai/dsh-*@0.1.7-rc.2`
-> is published, but this release has **not** been exercised against it, and the
-> devDependencies still resolve to the `0.1.1-rc.2` API surface — CI therefore
-> proves the code compiles and its tests pass, **not** that these rc.1 fixes hold
-> on rc.2. Bumping the baseline is a separate change, with a smoke test.
+> **Compatibility, stated precisely — two different claims.**
+>
+> - **Validated on DSH 0.1.7-rc.1.** The drift below was read off that live host
+>   through Cordis Inspect and reproduced against it.
+> - **Compiled and tested against DSH 0.1.7-rc.2.** Every `@deepseek-ai/dsh-*`
+>   devDependency is pinned to `0.1.7-rc.2`, so typecheck and the full suite run
+>   against that API surface. This is **not** "validated on rc.2": the fork has
+>   not been run on an rc.2 host. That is the remaining step, and it needs the
+>   installed DSH upgraded rather than more unit tests.
+>
+> Crediting rc.2 with real value: raising the baseline **found four genuine type
+> drifts** that rc.1's thinner published types hid — rc.2 ships `lib/types` for
+> every package, and three of them were needed as devDependencies before the
+> plugin's own contract checked out (details under "Baseline" below).
 
 **Fixed — the composer button crashed the input box.** `InputState.imageIds` was
 renamed to `attachmentIds` with no alias, so `state.imageIds.length` threw
@@ -88,10 +95,42 @@ exact `GenerateOptions` through the live `llm.stream()` and prints the raw failu
 the only way to see host-half failures, since the plugin's `console.info` never reaches
 the desktop logs.
 
-Tests: **194** (up from 163), adding composer rename coverage both directions,
+Tests: **196** (up from 163), adding composer rename coverage both directions,
 volatile-reference flattening (including a referenced `false`), the settings form's
 read/write/reset/validation contract, kebab→camel reason lookup for every reason,
-and the command's agent-id handling.
+the command's agent-id handling, and the first coverage of the SSE endpoint — two
+tests that read the response to its end, which is what a missing `res.end()` fails.
+
+**Baseline — devDependencies pinned to `0.1.7-rc.2`.** All nine DSH packages moved
+at once (a partially bumped tree would prove nothing), and three more were added
+because rc.2 ships `lib/types` for every package and the plugin's own contract only
+checks out once the packages that DECLARE it are present:
+
+- `dsh-client-ui-renderer` — owns the `Context.slots` augmentation. It is not
+  `dsh-client-ui-slots`, which is where the type name suggests it lives.
+- `dsh-client-ui-session` — declares `SessionStandardProps.sessionId`.
+- `dsh-client-store` — defines `SnapshotSelectorHook`, which types `useInput`.
+- `dsh-agent` — contributes the `'model-selection'` message source.
+
+`src/client/host-contracts.d.ts` (new) declares this plugin's own conversation
+message source: `MessageSourceMap` is merge-extensible by design (`dsh-agent`
+extends it the same way), and rc.2 dropped the generic `'plugin'` kind the 0.1.x
+types accepted, so the plugin now declares the source it has always stamped
+instead of forcing a cast. No runtime change.
+
+Two API changes the bump surfaced and this release adapts to:
+
+- `InputState` is now the published type behind `useInput`; the compatibility face
+  in `EnhanceButton` derives from it (`Omit<InputState, …>`) rather than standing
+  alone, so a release that adds a required field cannot silently invalidate it.
+- `@deepseek-ai/dsh-settings` REMOVED `installSettingsSection` and
+  `settingsNamespace` in rc.2 (they are real exports of `0.1.1-rc.2` — verified
+  against both published tarballs), so the legacy settings path now calls them
+  through a structural view of the older surface. Deleting that path instead
+  would have dropped rc.1 support, which is the version this fork is validated on.
+
+`pnpm-workspace.yaml` is gone: CI uses npm (`npm ci`, `package-lock.json`), so a
+second package manager's lockfile in the tree was pure confusion.
 
 ## 0.2.1 (2026-09-08)
 

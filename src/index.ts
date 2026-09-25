@@ -58,11 +58,20 @@ function installSettingsSectionCompat(ctx: Context, namespace: string, schema: u
       return
     }
     // Legacy rc line: resolve the standalone helpers lazily. The module itself
-    // exists in both cohorts; only its named exports differ. Types come from
-    // the rc devDependency — on alpha the runtime probe simply never calls it.
+    // exists in every cohort; only its named exports differ, and rc.2 REMOVED
+    // both — so the call goes through a structural view of the legacy surface
+    // instead of the module's current types, which no longer declare them.
+    // (Verified against the published tarballs: `installSettingsSection` and
+    // `settingsNamespace` are real exports of 0.1.1-rc.2 and absent from
+    // 0.1.7-rc.2.) The dynamic import keeps a cohort that never had them from
+    // evaluating the names at load time, and the runtime probe decides.
     void import('@deepseek-ai/dsh-settings').then((mod) => {
-      if (typeof mod.installSettingsSection === 'function') {
-        mod.installSettingsSection(ctx, mod.settingsNamespace(namespace), schema as never, entry, hooks as never)
+      const legacy = mod as unknown as {
+        installSettingsSection?: (owner: Context, ns: unknown, schema: unknown, entry: unknown, hooks: unknown) => void
+        settingsNamespace?: (ns: string) => unknown
+      }
+      if (typeof legacy.installSettingsSection === 'function' && typeof legacy.settingsNamespace === 'function') {
+        legacy.installSettingsSection(ctx, legacy.settingsNamespace(namespace), schema, entry, hooks)
       }
     }, () => {
       // Settings integration is optional by design; the plugin keeps working

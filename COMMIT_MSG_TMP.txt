@@ -1,0 +1,43 @@
+build: compile and test against DSH 0.1.7-rc.2
+
+Raises the devDependency baseline from the `0.1.1-rc.2` API surface — which CI
+was the only thing verifying, and which is the wrong surface for a fork whose
+whole reason to exist is 0.1.7 compatibility — to `0.1.7-rc.2`, all nine DSH
+packages at once so the tree can never be half-bumped.
+
+What the bump bought: rc.2 ships `lib/types` for every package while rc.1's
+published types were thin, so this is the first time the plugin's own contract is
+actually checked. Four real drifts surfaced.
+
+Added devDependencies — the packages that DECLARE what the plugin consumes:
+- dsh-client-ui-renderer: owns the `Context.slots` augmentation. It is NOT
+  `dsh-client-ui-slots`; `ctx.slots` was untyped without it.
+- dsh-client-ui-session: declares `SessionStandardProps.sessionId`.
+- dsh-client-store: defines `SnapshotSelectorHook`, which types `useInput`.
+- dsh-agent: contributes the `'model-selection'` message source.
+
+Code adapted:
+- `src/client/host-contracts.d.ts` (new) declares this plugin's own conversation
+  message source. `MessageSourceMap` is merge-extensible by design — `dsh-agent`
+  extends it exactly this way — and rc.2 dropped the generic `'plugin'` kind that
+  the 0.1.x types accepted. The plugin has always stamped
+  `{ kind: 'plugin', plugin: 'dsh-prompt-enhance' }`; it now declares that instead
+  of forcing a cast. No runtime change.
+- `EnhanceButton`: the compatibility face derives from the published `InputState`
+  (`Omit<InputState, ...>`) instead of standing alone, so a release adding a
+  required field cannot silently invalidate it.
+- `src/index.ts`: rc.2 REMOVED `installSettingsSection` and `settingsNamespace` —
+  both are real exports of `0.1.1-rc.2`, verified against the published tarballs —
+  so the legacy settings path now reaches them through a structural view. Deleting
+  that path instead would have dropped rc.1 support, which is the version this fork
+  is validated on.
+
+Claims kept honest: the CHANGELOG and both READMEs now state two separate things
+rather than one vague one — validated on rc.1 (read off the live host and
+reproduced against it) and compiled/tested against rc.2 (typecheck plus the full
+suite on that API surface). It has NOT been run on an rc.2 host; that needs the
+installed DSH upgraded, not more unit tests.
+
+Verified: typecheck 0, 196 tests pass, build clean, check:mount preflight OK, no
+dsh-* package outside 0.1.7-rc.2 in the installed tree, and the built client bundle
+requires nothing new at runtime (the new imports are type-only and erased).

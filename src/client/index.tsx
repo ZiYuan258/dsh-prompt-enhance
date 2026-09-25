@@ -13,6 +13,11 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+// Carries the `Context.slots` augmentation (`SlotRegistry`). It belongs to the
+// RENDERER package, not `dsh-client-ui-slots`: importing the wrong one leaves
+// `ctx.slots` untyped even though the service exists at runtime, which is why
+// this package is a devDependency at all.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { EnhanceButton } from './EnhanceButton'
 import { UndoBar } from './UndoBar'
 import { SettingsPanel, type SettingsPanelProps } from './SettingsPanel'

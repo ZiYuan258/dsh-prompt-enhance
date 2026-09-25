@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { EnhanceError } from '../shared/protocol'
 import { checkInputText } from '../shared/validate'
 import { EnhanceClientError, requestEnhance, requestEnhanceStream } from './enhance-client'
@@ -30,8 +30,12 @@ export type EnhanceButtonProps = PropsRuntime<'conversation.input.right'> & Prop
  * with no alias, and a slot may hand over a partial state during an upgrade.
  * Every read below is optional-chained so a rename degrades to 0 instead of
  * throwing `undefined.length` and taking the whole composer down with it.
+ *
+ * Derived FROM the live `InputState` rather than declared standalone: a release
+ * that adds a required field must not silently make this face wrong, and the only
+ * fields it overrides are the two that actually drifted.
  */
-type CompatibleInputState = {
+type CompatibleInputState = Omit<InputState, 'occurrences' | 'attachmentIds'> & {
   occurrences?: readonly unknown[]
   attachmentIds?: readonly unknown[]
   imageIds?: readonly unknown[]

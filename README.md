@@ -9,12 +9,17 @@ English | [简体中文](./README.zh-CN.md)
 
 > ### This is a fork
 >
-> A maintained fork of [`rongxingda/dsh-prompt-enhance`](https://github.com/rongxingda/dsh-prompt-enhance),
-> **verified on DSH 0.1.7-rc.1** — the API drift below was read off that live host
-> and reproduced against it. `0.1.7-rc.2` is published but **not yet exercised**;
-> see [CHANGELOG.md](./CHANGELOG.md) for what that means for CI. The upstream
-> sources are Apache-2.0; the original copyright and licence are retained in
-> [LICENSE](./LICENSE).
+> A maintained fork of [`rongxingda/dsh-prompt-enhance`](https://github.com/rongxingda/dsh-prompt-enhance).
+>
+> - **Validated on DSH 0.1.7-rc.1** — the API drift below was read off that live
+>   host and reproduced against it.
+> - **Compiled and tested against DSH 0.1.7-rc.2** — every DSH devDependency is
+>   pinned there, so typecheck and the full suite run against that API surface.
+>   It has **not** been run on an rc.2 host; that step needs the installed DSH
+>   upgraded, not more unit tests. See [CHANGELOG.md](./CHANGELOG.md).
+>
+> Upstream sources are Apache-2.0; the original copyright and licence are retained
+> in [LICENSE](./LICENSE).
 >
 > What this fork adds on top of 0.2.1 — all of it drift the upstream baseline
 > (`dsh >= 0.1.1-rc.2`) never accounted for:
