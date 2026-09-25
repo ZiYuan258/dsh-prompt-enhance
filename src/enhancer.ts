@@ -9,6 +9,7 @@
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, FinishReason, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { EnhanceError, EnhanceResult } from './shared/protocol'
+import type { ReasoningEffortChoice } from './config'
 import { normalizeOutput } from './shared/normalize'
 import { frameUserPrompt } from './prompts'
 /** Structural LLM face so tests stub the stream without a Cordis runtime. */
@@ -57,6 +58,15 @@ export interface EnhanceCallOptions {
   /** The raw draft to rewrite. */
   text: string
   temperature: number
+  /**
+   * Reasoning budget forwarded verbatim, or `inherit` to omit the field.
+   *
+   * Sent explicitly on purpose: leaving it out makes the adapter apply the
+   * model's own default effort, which is the expensive path (measured on
+   * deepseek-flash: 2897 output tokens at the default `high` versus 252 at
+   * `off`, for the same draft and no better rewrite).
+   */
+  reasoningEffort: ReasoningEffortChoice
   maxTokens: number
   /** End-to-end deadline in milliseconds. */
   timeoutMs: number
@@ -121,6 +131,11 @@ export async function enhanceText(llm: LlmStreamFace, options: EnhanceCallOption
       temperature: options.temperature,
       maxTokens: options.maxTokens,
       signal,
+      // `inherit` deliberately leaves the field unset, for a route that rejects
+      // an explicit effort; `ReasoningEffortId` is a brand over the effort id.
+      ...options.reasoningEffort === 'inherit'
+        ? {}
+        : { reasoningEffort: options.reasoningEffort as NonNullable<GenerateOptions['reasoningEffort']> },
       ...options.sessionId !== undefined ? { sessionId: options.sessionId as GenerateOptions['sessionId'] } : {},
     }
     const assembler = new BlockAssembler()
@@ -217,25 +232,39 @@ function finishToDetail(reason: FinishReason): EnhanceError | undefined {
   }
 }
 
-/** Stable upstream reasons the dictionaries and formatEnhanceError both know. */
+/**
+ * Stable upstream reasons the dictionaries and formatEnhanceError both know.
+ * One literal per reason; the dictionary key is derived from it by camel-casing
+ * the kebab-case halves, so a reason added here cannot drift out of sync with
+ * the client dictionary the way it silently did before.
+ */
 export type UpstreamReason =
   | 'auth'
   | 'invalid-credential'
+  | 'missing-credential'
   | 'rate-limit'
   | 'quota'
   | 'empty'
   | 'context-window'
   | 'tool-call'
   | 'max-tokens'
+  | 'server'
+  | 'transport'
 
 /** Known provider failure codes with a dedicated fix hint; others stay generic. */
 const REASON_CODES: Record<string, UpstreamReason> = {
   AUTH: 'auth',
   INVALID_CREDENTIAL: 'invalid-credential',
+  // Observed live: the adapter reports a missing API key under this code, and
+  // without an entry here the user got only the generic provider-error line
+  // instead of being told to store a key.
+  MISSING_CREDENTIAL: 'missing-credential',
   RATE_LIMIT: 'rate-limit',
   QUOTA_EXCEEDED: 'quota',
   EMPTY_RESPONSE: 'empty',
   CONTEXT_WINDOW_EXCEEDED: 'context-window',
+  SERVER: 'server',
+  TRANSPORT: 'transport',
 }
 
 /** The params fragment carrying the fix-hint reason, when the code is known. */
@@ -253,12 +282,15 @@ function mapCode(code: string): EnhanceError['code'] {
 const REASON_HINTS: Record<UpstreamReason, string> = {
   auth: '鉴权失败：请检查该 provider 的 API Key 配置。',
   'invalid-credential': '鉴权失败：存储的 API Key 不可用，请修正后重试。',
+  'missing-credential': '缺少该 provider 的 API Key：请在「模型」设置页保存密钥，或在启动环境里导出对应的凭据变量后重试。',
   'rate-limit': '模型服务限流，请稍后重试。',
   quota: '模型服务配额/余额不足，请检查账户。',
   empty: '模型返回了空响应，请重试。',
   'context-window': '输入超出模型上下文窗口，请精简原文或更换模型。',
   'tool-call': '模型请求了工具调用，提示词增强只需要纯文本；请更换模型后重试。',
   'max-tokens': '重写结果达到输出上限（maxOutputTokens），请在设置中调大上限或精简原文后重试。',
+  server: '模型服务端返回错误，请稍后重试。',
+  transport: '与模型服务的连接失败，请检查网络或代理设置后重试。',
 }
 
 /**

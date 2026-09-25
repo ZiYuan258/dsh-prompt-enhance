@@ -52,9 +52,22 @@ describe('resolveConfig', () => {
     expect(Object.keys(resolved).sort()).toEqual([
       'contextAware', 'contextMaxChars', 'contextMaxMessages', 'enabled',
       'maxConcurrent', 'maxInputChars', 'maxOutputTokens', 'model',
-      'provider', 'rateLimitPerMinute',
+      'provider', 'rateLimitPerMinute', 'reasoningEffort',
       'shortcut', 'strategyMode', 'streaming', 'systemPrompt', 'temperature', 'timeoutMs',
     ])
+  })
+
+  // Regression: the field decides the bill (measured 252 vs 2897 output tokens
+  // on deepseek-flash), so an unrecognized stored value must not reach the model
+  // call — it degrades to the shipped cheap default.
+  it('defaults the reasoning effort to the cheapest shipped choice', () => {
+    expect(resolveConfig({ ...DEFAULT_CONFIG }).reasoningEffort).toBe('off')
+    const legacy = { ...DEFAULT_CONFIG, reasoningEffort: 'turbo' } as unknown as typeof DEFAULT_CONFIG
+    expect(resolveConfig(legacy).reasoningEffort).toBe('off')
+    const missing = { ...DEFAULT_CONFIG } as Partial<typeof DEFAULT_CONFIG>
+    delete missing.reasoningEffort
+    expect(resolveConfig(missing as typeof DEFAULT_CONFIG).reasoningEffort).toBe('off')
+    expect(resolveConfig({ ...DEFAULT_CONFIG, reasoningEffort: 'inherit' }).reasoningEffort).toBe('inherit')
   })
 
   it('defaults the streaming and context window to their documented values', () => {
@@ -72,6 +85,37 @@ describe('resolveConfig', () => {
     const resolved = resolveConfig(partial as typeof DEFAULT_CONFIG)
     expect(resolved.streaming).toBe(true)
     expect(resolved.contextAware).toBe(true)
+  })
+
+  // Every schema field is `.volatile()` — without that, `dsh-settings` has no
+  // form to render and the Settings page stays empty. The loader then hands the
+  // plugin `Volatile<T>` references (objects with `get()`), so resolveConfig must
+  // flatten them or every numeric read below would compare against an object.
+  describe('volatile references', () => {
+    /** Minimal stand-in for the harness's `Volatile<T>` reference. */
+    const volatile = <T>(value: T): { get: () => T } => ({ get: () => value })
+
+    it('unwraps a fully volatile config section', () => {
+      const wrapped = Object.fromEntries(
+        Object.entries(DEFAULT_CONFIG).map(([key, value]) => [key, volatile(value)]),
+      ) as unknown as typeof DEFAULT_CONFIG
+      expect(resolveConfig(wrapped)).toEqual(DEFAULT_CONFIG)
+    })
+
+    // A reference object is always truthy, so an unwrapped `false` would sail
+    // past the boolean guard and leave the plugin running while the user
+    // believes it is switched off.
+    it('honors a volatile false on the master switch', () => {
+      const wrapped = Object.fromEntries(
+        Object.entries(DEFAULT_CONFIG).map(([key, value]) => [key, volatile(key === 'enabled' ? false : value)]),
+      ) as unknown as typeof DEFAULT_CONFIG
+      expect(resolveConfig(wrapped).enabled).toBe(false)
+    })
+
+    it('still rejects a non-boolean switch', () => {
+      const wrapped = { ...DEFAULT_CONFIG, enabled: volatile('yes') } as unknown as typeof DEFAULT_CONFIG
+      expect(() => resolveConfig(wrapped)).toThrow(/enabled/)
+    })
   })
 
   it('accepts a zero-width context window (context disabled by budget)', () => {

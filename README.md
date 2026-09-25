@@ -8,6 +8,36 @@
 
 English | [简体中文](./README.zh-CN.md)
 
+> ### This is a fork
+>
+> A maintained fork of [`rongxingda/dsh-prompt-enhance`](https://github.com/rongxingda/dsh-prompt-enhance),
+> tracking **DSH 0.1.7-rc.1**. The upstream sources are Apache-2.0; the original
+> copyright and licence are retained in [LICENSE](./LICENSE), and the files
+> changed here are listed in [CHANGELOG.md](./CHANGELOG.md).
+>
+> What this fork adds on top of 0.2.1 — all of it drift the upstream baseline
+> (`dsh >= 0.1.1-rc.2`) never accounted for:
+>
+> - **It loads at all.** `InputState.imageIds` became `attachmentIds`, and the
+>   composer button crashed the whole input box on the older field name.
+> - **Enhancement works.** `settings.get(...)` no longer exists, so route
+>   resolution threw `ctx.get(...)?.get is not a function` on every call; the
+>   harness default model is now read from the `agentDefaultModel` service.
+>   `/enhance` read `invocation.agent.session.id`; the agent id is `agent.id`.
+> - **It costs a fraction as much.** The rewrite now sends an explicit
+>   `reasoningEffort`, defaulting to `off`: measured on `deepseek-flash` for one
+>   ordinary draft, 252 output tokens at `off` versus **2897** at the model's own
+>   default (`high`).
+> - **Failures are readable.** Reasons arrive kebab-case (`max-tokens`) while the
+>   dictionary keys are camelCase (`upstream.maxTokens`), so every specific fix
+>   hint silently degraded to one generic line.
+> - **The configuration is reachable.** The schema was served by the host all
+>   along, but a DSH plugin gets no Settings UI for free — the fork registers the
+>   `settings.section` seat and ships a form for all 17 fields.
+>
+> Upstream stays wired as the `upstream` remote (`git rebase upstream/main`), and
+> changes are selected deliberately rather than merged wholesale.
+
 ---
 
 ## Why
@@ -25,7 +55,8 @@ Good agent prompts state *who the model should be*, *what to deliver*, *in what 
 | 💬 **`/enhance` command** | Rewrite any text from the slash-command plane; the result never enters model history |
 | 🧠 **Model routing** | Settings pair → current session model → harness default model, in that order |
 | 🔑 **Zero credential setup** | Calls ride the harness LLM service; keys come from the harness credential store |
-| ⚙️ **Live settings** | Every knob (model override, temperature, budgets, system prompt, shortcut) hot-applies from Settings → 插件配置 |
+| ⚙️ **Its own Settings page** | A dedicated **提示词增强 / Prompt enhance** section in Settings, with one control per config field (and a per-field reset). Edits hot-apply to the next call |
+| 💸 **Cheap by default** | The rewrite runs with `reasoningEffort: off` — a rewrite is short and well-specified, and the model's own default effort cost ~11× the output tokens for no better result (measured on `deepseek-flash`: 252 vs 2897 tokens for one draft) |
 | 🛡️ **Draft safety** | Empty, over-length, images-only, and command-chip inputs are rejected locally; upstream failures are mapped to readable messages; the draft is never mutated on failure |
 
 ![The preview panel running in dsh web: original and enhanced prompt side by side with model info, fill-back and copy actions](https://raw.githubusercontent.com/rongxingda/dsh-prompt-enhance/main/docs/evidence-prompt-enhance-panel.png)
@@ -115,7 +146,8 @@ Everything lives in the `prompt-enhance` settings namespace, edited from the web
 | `enabled` | `true` | Master switch; off hides the button and disables every trigger |
 | `provider` + `model` | empty | Explicit route override; must be filled as a **pair** (or both empty to follow the current session model) |
 | `temperature` | `0.3` | Low temperature keeps the rewrite faithful to the original |
-| `maxOutputTokens` | `2048` | Output token budget of one enhancement call |
+| `reasoningEffort` | `off` | Reasoning budget forwarded to the rewrite: `off`, `low`, `high`, or `inherit` (send no field and take the model's own default). A rewrite is short and well-specified, so deep reasoning buys nothing but costs a lot — measured on `deepseek-flash` for one ordinary draft: `off` used **252** output tokens and returned 439 characters, `low` used 619, `high` (the route default) used **2897** for 979 characters. Set `inherit` only if the route rejects an explicit effort |
+| `maxOutputTokens` | `8192` | Output token budget of one enhancement call. Reasoning is billed against this same budget and runs **before** any visible text, so a low cap can be consumed by reasoning alone and finish with zero text — the original `2048` did exactly that on ordinary drafts |
 | `maxInputChars` | `12000` | Input character cap (counted in Unicode code points — an emoji is one character); over-limit drafts are **rejected, never truncated** |
 | `timeoutMs` | `60000` | End-to-end deadline of one call |
 | `systemPrompt` | built-in strategy | Custom strategy text; how it combines with the built-in strategy is set by `strategyMode` |

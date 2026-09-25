@@ -42,6 +42,7 @@ const baseOptions = {
   system: 'SYS',
   text: '帮我写个爬虫',
   temperature: 0.3,
+  reasoningEffort: 'off' as const,
   maxTokens: 512,
   timeoutMs: 5000,
 }
@@ -56,6 +57,21 @@ describe('enhanceText', () => {
     expect(llm.calls[0]?.system).toBe('SYS')
     expect(llm.calls[0]?.temperature).toBe(0.3)
     expect(llm.calls[0]?.messages[0]?.content[0]).toMatchObject({ type: 'text' })
+  })
+
+  // Cost regression: omitting the field makes the adapter apply the model's own
+  // default effort, which measured ~11x the output tokens of `off` on
+  // deepseek-flash for the same draft. The effort must reach the call.
+  it('forwards the configured reasoning effort to the model call', async () => {
+    const llm = stubLlm(() => textStream(['ok'], { reason: 'stop' }))
+    await enhanceText(llm, { ...baseOptions, reasoningEffort: 'low' })
+    expect(llm.calls[0]?.reasoningEffort).toBe('low')
+  })
+
+  it('omits the reasoning effort entirely when set to inherit', async () => {
+    const llm = stubLlm(() => textStream(['ok'], { reason: 'stop' }))
+    await enhanceText(llm, { ...baseOptions, reasoningEffort: 'inherit' })
+    expect(llm.calls[0]).not.toHaveProperty('reasoningEffort')
   })
 
   it('strips a wrapping fence from the model output', async () => {

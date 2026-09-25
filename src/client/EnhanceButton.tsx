@@ -24,6 +24,19 @@ import { useSessionKey, serverSessionId } from './session-key'
 /** Props of the input.right entry: the InputZone owner share + session kit + locale seat. */
 export type EnhanceButtonProps = PropsRuntime<'conversation.input.right'> & PropsLocale<'prompt-enhance'>
 
+/**
+ * Input fields the client renamed across releases, plus the partial-slot case:
+ * `0.1.1-rc.2` published `imageIds`, current releases publish `attachmentIds`
+ * with no alias, and a slot may hand over a partial state during an upgrade.
+ * Every read below is optional-chained so a rename degrades to 0 instead of
+ * throwing `undefined.length` and taking the whole composer down with it.
+ */
+type CompatibleInputState = {
+  occurrences?: readonly unknown[]
+  attachmentIds?: readonly unknown[]
+  imageIds?: readonly unknown[]
+}
+
 /** One composer's enhance trigger. */
 export function EnhanceButton(props: EnhanceButtonProps): ReactNode {
   const { t, sessionId, useInput, inputActions } = props
@@ -33,8 +46,11 @@ export function EnhanceButton(props: EnhanceButtonProps): ReactNode {
   const wireId = serverSessionId(sessionId)
   const draft = useInput((state) => state.draft)
   const phase = useInput((state) => state.phase)
-  const occurrenceCount = useInput((state) => state.occurrences.length)
-  const imageCount = useInput((state) => state.imageIds.length)
+  const occurrenceCount = useInput((state) => (state as CompatibleInputState).occurrences?.length ?? 0)
+  const imageCount = useInput((state) => {
+    const compatible = state as CompatibleInputState
+    return compatible.attachmentIds?.length ?? compatible.imageIds?.length ?? 0
+  })
   const settings = useSyncExternalStore(subscribeClientSettings, getClientSettings)
   const panel = useSyncExternalStore(ui.subscribe, ui.getPanel)
   const rootRef = useRef<HTMLButtonElement | null>(null)

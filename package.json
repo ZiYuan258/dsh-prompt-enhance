@@ -36,7 +36,7 @@
     }
   },
   "dependencies": {
-    "schemastery": "^3.18.0"
+    "@deepseek-ai/schemastery": "^3.18.4"
   },
   "peerDependencies": {
     "react": "^18.2.0"
@@ -93,6 +93,7 @@
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc -p . --pretty false",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:mount": "node scripts/check-profile-mount.mjs"
   }
 }

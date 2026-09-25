@@ -2,6 +2,89 @@
 
 All notable changes are documented here. Versions follow [npm](https://www.npmjs.com/package/dsh-prompt-enhance); each release also has a [GitHub Release](https://github.com/rongxingda/dsh-prompt-enhance/releases) page with notes.
 
+## fork-0.2.1+dsh0.1.7 (2026-09-25)
+
+Fork maintenance release: makes the 0.2.1 tree work on DSH **0.1.7-rc.1**, which
+the upstream baseline (`dsh >= 0.1.1-rc.2`) predates. Four of these are hard
+failures on the current host, and all four were silent — the plugin either took
+the whole composer down or degraded one error message into another.
+
+**Fixed — the composer button crashed the input box.** `InputState.imageIds` was
+renamed to `attachmentIds` with no alias, so `state.imageIds.length` threw
+`undefined.length` and killed the composer alongside it. Every draft-state read is
+now optional-chained and accepts both names, so a rename degrades to 0 instead of
+throwing. (`src/client/EnhanceButton.tsx`)
+
+**Fixed — every enhancement failed.** Route resolution read the harness default
+model through `ctx.get('settings')?.get('agent-default-model')`; the current
+`settings` service exposes `configure/prepareDocument/describe/update/replace/mutate`
+and no `get`, so the call threw `ctx.get(...)?.get is not a function` whenever the
+plugin settings carried no explicit `provider`/`model`. The default selection is
+now read from the `agentDefaultModel` service (`currentSelection()`), with the
+legacy reader and a `describe()` scan kept as guarded fallbacks — this is the
+fallback layer of route resolution, so a missing reader must cost the layer, never
+the request. (`src/orchestrate.ts`)
+
+**Fixed — `/enhance` failed the same way.** It read `invocation.agent.session.id`;
+the current contract is `interface Agent { readonly id: SessionId }`. Both shapes
+are probed, and a host exposing neither simply drops the session route.
+(`src/enhance-command.ts`)
+
+**Fixed — no failure showed its actual cause.** Wire reasons are kebab-case
+(`max-tokens`) while the dictionary keys are camelCase (`error.upstream.maxTokens`),
+so `specific in zh` was always false and every specific fix hint fell back to the
+generic provider line. Reasons are camel-cased before lookup, and the two codes
+observed live but missing from the table (`MISSING_CREDENTIAL`, `SERVER`) plus
+`TRANSPORT` were added to both dictionaries. (`src/enhancer.ts`, `src/client/ResultPanel.tsx`,
+`src/client/locales.ts`)
+
+**Changed — cost.** The rewrite now sends an explicit `reasoningEffort`, defaulting
+to `off`. A rewrite is short and well-specified, and the model's own default effort
+is expensive: measured on `deepseek-flash` for one ordinary draft — `off` 252 output
+tokens, `low` 619, `high` (the route default) **2897**, `max` 4483. `inherit` omits
+the field for routes that reject an explicit effort. `maxOutputTokens` default rises
+2048 → 8192 (schema max 32768 → 65536): reasoning is billed against the same budget
+and runs first, so the old cap could be consumed by reasoning alone and finish with
+zero text — which is exactly what the user-visible "model returned an error" was.
+(`src/config.ts`, `src/enhancer.ts`, `src/orchestrate.ts`)
+
+**Added — the plugin's own Settings page.** The host has always served the Config
+schema, but a DSH plugin gets no Settings UI for free: the Plugins page renders a
+configure control only for a package whose client half registers `plugins.row.config`,
+and a nav entry only for one registering `settings.section`. Neither existed, so the
+configuration was unreachable from the GUI. A `settings.section` page now renders all
+17 fields from one descriptor table, committing switches and selects immediately and
+text/numbers on blur/Enter, validating ranges locally, and offering per-field reset
+through `unset`. (`src/client/SettingsPanel.tsx`, `src/client/index.tsx`,
+`src/client/styles.ts`)
+
+**Changed — the schema must be volatile, on the harness schemastery build.**
+`dsh-settings` projects a form only from a schema with `.volatile()` fields
+(`volatileForm` returns undefined otherwise and `describe()` skips the entry), and
+`.volatile()` exists only in `@deepseek-ai/schemastery` — the build every shipped
+plugin imports — not in the public `schemastery` package. The dependency moved
+accordingly, which also removed the `Volatile<T>` type skew the public package
+caused. Because volatile fields arrive as live references, `resolveConfig` flattens
+them before validating: a `Volatile<false>` is a truthy object, so validating first
+would let a disabled section pass the `enabled` boolean check. (`src/config.ts`,
+`package.json`, `pnpm-workspace.yaml`)
+
+**Added — two operator tools, both plain node scripts.** `scripts/check-profile-mount.mjs`
+(`npm run check:mount`) is a read-only preflight for a DSH profile: it parses the
+profile patch and every declared bundle patch with the real `yaml` package, and fails
+when two layers append the same row id to the root entry list (an id-less `insert` is
+an unconditional append, so the Loader deduplicates nothing and startup aborts with
+`duplicate loader entry id`); it also verifies every `link:` dependency resolves and
+that `src/` is not newer than `lib/`. `scripts/probe-llm-call.mjs` drives the plugin's
+exact `GenerateOptions` through the live `llm.stream()` and prints the raw failure —
+the only way to see host-half failures, since the plugin's `console.info` never reaches
+the desktop logs.
+
+Tests: **194** (up from 163), adding composer rename coverage both directions,
+volatile-reference flattening (including a referenced `false`), the settings form's
+read/write/reset/validation contract, kebab→camel reason lookup for every reason,
+and the command's agent-id handling.
+
 ## 0.2.1 (2026-09-08)
 
 Internal hardening from the 0.2.0 self-audit — three performance fixes with no behavior change, a privacy clarification in the docs, and a devDependency cleanup. No new features, no config changes.

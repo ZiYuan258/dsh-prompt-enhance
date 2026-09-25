@@ -38,10 +38,35 @@ interface SessionsFace {
   } | undefined
 }
 
-/** Structural face of the settings provider for cross-namespace reads. */
-interface SettingsFace {
-  get(ns: string): unknown
+/**
+ * Structural face of the harness default-model service.
+ *
+ * Current releases own the default selection as a real service
+ * (`dsh-agent-default-model` → `agentDefaultModel.currentSelection()`; the class
+ * is `AgentDefaultModelConfig extends Service`, registered under
+ * `agentDefaultModel`). The earlier releases this plugin targeted exposed it as
+ * a settings section instead, reachable through `settings.get(ns)`, which no
+ * longer exists — reading it that way threw `ctx.get(...)?.get is not a
+ * function` and failed every enhancement that did not carry a session route.
+ */
+interface AgentDefaultModelFace {
+  currentSelection?: () => { provider?: unknown; model?: unknown } | undefined
 }
+
+/** Structural face of the settings provider (current releases). */
+interface SettingsFace {
+  /**
+   * Project the active plugin schemas and their live values, keyed by profile
+   * entry id. The legacy `get(ns)` reader is absent here; it is probed
+   * separately so a release that dropped it degrades instead of throwing.
+   */
+  describe?: () => readonly { ns?: unknown; value?: unknown }[]
+  /** Legacy section reader, still accepted defensively; not a function today. */
+  get?: (ns: string) => unknown
+}
+
+/** The legacy settings entry id carrying the default model on older releases. */
+const DEFAULT_MODEL_LEGACY_NS = 'agent-default-model'
 
 /** Narrow an untrusted provider/model pair into a route (trimmed). */
 function routeOf(config: { provider?: unknown; model?: unknown } | null | undefined): RoutePair | undefined {
@@ -72,10 +97,52 @@ export function sessionRouteOf(ctx: Context, sessionId: string | undefined): Rou
   return routeOf(epoch?.config)
 }
 
-/** The harness-wide default model selection registered by dsh-agent-default-model. */
+/**
+ * The harness-wide default model selection registered by dsh-agent-default-model.
+ *
+ * Three reader shapes are probed, newest first, and every one of them is
+ * optional-chained AND wrapped: this is the fallback layer of route resolution,
+ * so a host that renamed or removed the reader must lose the layer, never the
+ * request. (The 0.1.7-rc.1 regression was exactly this: `settings.get` is gone,
+ * and an unguarded call threw before either remaining layer could answer.)
+ * @param ctx - registrant context (optional `agentDefaultModel` / `settings`).
+ * @returns the trimmed route, or undefined to let the caller keep looking.
+ */
 export function defaultRouteOf(ctx: Context): RoutePair | undefined {
-  const value = (ctx.get('settings') as SettingsFace | undefined)?.get('agent-default-model')
-  return routeOf(value as { provider?: unknown; model?: unknown } | undefined)
+  // Current shape: a dedicated service that owns the selection.
+  const defaultModel = ctx.get('agentDefaultModel') as AgentDefaultModelFace | undefined
+  if (typeof defaultModel?.currentSelection === 'function') {
+    try {
+      const route = routeOf(defaultModel.currentSelection())
+      if (route !== undefined) return route
+    } catch {
+      // Fall through to the legacy readers.
+    }
+  }
+
+  const settings = ctx.get('settings') as SettingsFace | undefined
+  // Legacy shape: a settings section addressed by entry id.
+  if (typeof settings?.get === 'function') {
+    try {
+      const route = routeOf(settings.get(DEFAULT_MODEL_LEGACY_NS) as { provider?: unknown; model?: unknown } | undefined)
+      if (route !== undefined) return route
+    } catch {
+      // Fall through to the descriptor scan.
+    }
+  }
+  // Intermediate shape: the live values projected through `describe()`, keyed by
+  // profile entry id — the owner's entry id ends with the legacy namespace.
+  if (typeof settings?.describe === 'function') {
+    try {
+      const descriptor = settings.describe().find((entry) => (
+        typeof entry?.ns === 'string' && entry.ns.endsWith(DEFAULT_MODEL_LEGACY_NS)
+      ))
+      return routeOf(descriptor?.value as { provider?: unknown; model?: unknown } | undefined)
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
 }
 
 /**
@@ -164,6 +231,7 @@ export async function runEnhance(ctx: Context, config: Config, options: RunEnhan
       system: effectiveSystemPrompt(config, context === undefined ? DEFAULT_SYSTEM_PROMPT : withContextRules(DEFAULT_SYSTEM_PROMPT)),
       text: options.text,
       temperature: config.temperature,
+      reasoningEffort: config.reasoningEffort,
       maxTokens: config.maxOutputTokens,
       timeoutMs: config.timeoutMs,
       signal: options.signal,

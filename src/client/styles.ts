@@ -200,6 +200,43 @@ export const CSS = `
   cursor: pointer; padding: 0 4px; font-size: 12px;
 }
 .dsh-pe-undo-x:hover { opacity: 1; }
+
+/* The plugin's own Settings page (settings.section). It inherits the shell's
+   text color and only draws structure, so it follows whichever skin is active
+   instead of importing host theme internals. */
+.dsh-pe-settings { display: flex; flex-direction: column; gap: 16px; padding: 4px 0 24px; }
+.dsh-pe-settings-intro { margin: 0; font-size: 13px; line-height: 1.6; opacity: 0.75; }
+.dsh-pe-settings-note { padding: 16px 0; font-size: 13px; opacity: 0.7; }
+.dsh-pe-settings-error {
+  padding: 8px 10px; border-radius: 6px; font-size: 13px;
+  border: 1px solid rgba(220, 90, 90, 0.5); background: rgba(220, 90, 90, 0.12);
+}
+.dsh-pe-settings-fields { display: flex; flex-direction: column; gap: 14px; }
+.dsh-pe-field {
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-start;
+  padding-bottom: 12px; border-bottom: 1px solid rgba(127, 127, 127, 0.18);
+}
+.dsh-pe-field-head { flex: 1 1 260px; min-width: 200px; }
+.dsh-pe-field-label { display: block; font-size: 13px; font-weight: 600; }
+.dsh-pe-field-help { margin: 2px 0 0; font-size: 12px; line-height: 1.55; opacity: 0.62; }
+.dsh-pe-field-control { display: flex; align-items: center; gap: 8px; flex: 0 1 260px; }
+.dsh-pe-field-control input[type="text"],
+.dsh-pe-field-control input[type="number"],
+.dsh-pe-field-control select,
+.dsh-pe-field-control textarea {
+  flex: 1 1 auto; min-width: 0; padding: 4px 8px; font: inherit; font-size: 13px;
+  color: inherit; background: rgba(127, 127, 127, 0.12);
+  border: 1px solid rgba(127, 127, 127, 0.32); border-radius: 6px;
+}
+.dsh-pe-field-control input[type="checkbox"] { flex: 0 0 auto; width: 16px; height: 16px; }
+.dsh-pe-field-control textarea { resize: vertical; line-height: 1.5; }
+.dsh-pe-field-control :disabled { opacity: 0.5; }
+.dsh-pe-field-reset {
+  flex: 0 0 auto; padding: 3px 8px; font: inherit; font-size: 12px;
+  color: inherit; opacity: 0.6; cursor: pointer;
+  background: transparent; border: 1px solid rgba(127, 127, 127, 0.32); border-radius: 6px;
+}
+.dsh-pe-field-reset:hover { opacity: 1; }
 `
 
 /**

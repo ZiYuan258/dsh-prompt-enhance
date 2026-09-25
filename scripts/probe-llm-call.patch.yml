@@ -1,0 +1,12 @@
+# Overlay that mounts scripts/probe-llm-call.mjs as a one-boot loader row.
+#
+# Applied with `dsh --profile <name> --patch <this file>`, so the probe runs in
+# the real module graph without ever entering the profile's own layer.
+#
+# REPLACE <checkout> with the absolute path of THIS checkout before use — the row
+# name is a file URL, and it must live under the profile's resolution root for
+# the probe's `@deepseek-ai/dsh-llm` import to resolve. The path is deliberately
+# not committed: it is machine-specific.
+- insert:
+    - id: probe-llm-call
+      name: 'file:///<checkout>/scripts/probe-llm-call.mjs'

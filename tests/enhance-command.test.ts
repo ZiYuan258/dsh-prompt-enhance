@@ -37,11 +37,24 @@ function captureDefinition(readConfig: () => Config = () => ({ ...DEFAULT_CONFIG
   return captured
 }
 
-/** Minimal invocation shape; brand types are irrelevant to the command logic. */
-function invocation(rawInput: string): CommandInvocation {
+/**
+ * Minimal invocation shape; brand types are irrelevant to the command logic.
+ *
+ * The session id lives at `agent.id` in the CURRENT contract
+ * (`interface Agent { readonly id: SessionId }`); the nested `agent.session.id`
+ * shape this plugin was originally written against does not exist any more.
+ * `nested` selects the legacy shape so both readers stay covered — the original
+ * fixture only modelled the legacy one, which is how an unconditional
+ * `invocation.agent.session.id` passed the whole suite while failing on every
+ * real invocation.
+ */
+function invocation(rawInput: string, options: { nested?: boolean; noAgentId?: boolean } = {}): CommandInvocation {
+  const agent = options.noAgentId === true
+    ? {}
+    : options.nested === true ? { session: { id: 's1' } } : { id: 's1' }
   return {
     commandId: 'cmd-1',
-    agent: { session: { id: 's1' } },
+    agent,
     rawInput,
     attachments: [],
     signal: new AbortController().signal,
@@ -113,5 +126,25 @@ describe('/enhance slash command', () => {
     const result = await definition.handler(invocation('hello'))
     expect(result.kind).toBe('error')
     expect((result as { text: string }).text).toContain('增强失败')
+  })
+
+  // Regression: reading `invocation.agent.session.id` unconditionally threw on
+  // the current contract, where the id sits directly on the agent.
+  it('still reads the legacy nested agent.session.id shape', async () => {
+    vi.mocked(runEnhance).mockResolvedValue({ text: 'enhanced', provider: 'p', model: 'm', elapsedMs: 5 })
+    const definition = captureDefinition()
+    const result = await definition.handler(invocation('hello', { nested: true }))
+    expect(result).toEqual({ kind: 'success', text: 'enhanced' })
+    expect(sessionRouteOf).toHaveBeenCalledWith(expect.anything(), 's1')
+  })
+
+  it('degrades to no session route when the agent carries no id', async () => {
+    vi.mocked(runEnhance).mockResolvedValue({ text: 'enhanced', provider: 'p', model: 'm', elapsedMs: 5 })
+    const definition = captureDefinition()
+    const result = await definition.handler(invocation('hello', { noAgentId: true }))
+    expect(result).toEqual({ kind: 'success', text: 'enhanced' })
+    expect(sessionRouteOf).toHaveBeenCalledWith(expect.anything(), undefined)
+    const call = vi.mocked(runEnhance).mock.calls[0]!
+    expect(call[2]).not.toHaveProperty('sessionId')
   })
 })

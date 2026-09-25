@@ -9,12 +9,13 @@
  */
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, act, waitFor } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { EnhanceButton } from '../src/client/EnhanceButton'
 import { UndoBar } from '../src/client/UndoBar'
+import { EnhanceClientError } from '../src/client/enhance-client'
 import { requestEnhance, requestEnhanceStream } from '../src/client/enhance-client'
 import { zh } from '../src/client/locales'
 import * as ui from '../src/client/ui-state'
@@ -38,8 +39,21 @@ const t = ((key: string, params?: Record<string, unknown>): string => {
   return s
 }) as TranslateNS<'prompt-enhance'>
 
+/**
+ * The draft-state fields a client release may rename or withhold. Tests need
+ * to publish states the published `InputState` type does not admit (a field
+ * that is gone at runtime, or renamed), so those keys are optional here and
+ * the fixture casts once when it hands the state to the component.
+ */
+type CompatInputState = Partial<InputState> & {
+  draft: string
+  occurrences?: readonly unknown[]
+  imageIds?: readonly unknown[]
+  attachmentIds?: readonly unknown[]
+}
+
 /** Minimal fake of the per-session input machine store: synchronous, like the real one. */
-function makeFakeInput(initial: Partial<InputState> & { draft: string }) {
+function makeFakeInput(initial: CompatInputState) {
   let state: InputState = {
     phase: 'plain',
     occurrences: [],
@@ -47,7 +61,7 @@ function makeFakeInput(initial: Partial<InputState> & { draft: string }) {
     draftRev: 0,
     queue: [],
     ...initial,
-  } as InputState
+  } as unknown as InputState
   const subscribers = new Set<() => void>()
   function useInput<S>(selector: (s: InputState) => S): S {
     return useSyncExternalStore(
@@ -63,8 +77,8 @@ function makeFakeInput(initial: Partial<InputState> & { draft: string }) {
   return {
     useInput,
     /** Simulate one machine publish: new snapshot object, all subscribers notified. */
-    set(partial: Partial<InputState>): void {
-      state = { ...state, ...partial }
+    set(partial: CompatInputState): void {
+      state = { ...state, ...partial } as unknown as InputState
       for (const notify of subscribers) notify()
     },
   }
@@ -145,6 +159,24 @@ describe('EnhanceButton guard chain', () => {
     renderComposer(input, { setDraft: vi.fn() } as never, 's1')
     fireEvent.click(enhanceButton())
     expect(screen.getByText(zh['error.occurrences'])).toBeTruthy()
+  })
+
+  // The composer must survive a client release that renames or withholds the
+  // draft-state fields: a bare `state.imageIds.length` threw here and took the
+  // whole composer down, so both directions of the rename are locked.
+  it('mounts when the older slot contract omits occurrences and imageIds', () => {
+    const input = makeFakeInput({ draft: '文本' })
+    input.set({ occurrences: undefined, imageIds: undefined })
+    renderComposer(input, { setDraft: vi.fn() } as never, 's1')
+    expect(enhanceButton()).toBeTruthy()
+  })
+
+  it('recognizes attachmentIds from the current InputState contract', () => {
+    const input = makeFakeInput({ draft: '' })
+    input.set({ imageIds: undefined, attachmentIds: ['file1'] })
+    renderComposer(input, { setDraft: vi.fn() } as never, 's1')
+    fireEvent.click(enhanceButton())
+    expect(screen.getByText(zh['error.imagesOnly'])).toBeTruthy()
   })
 })
 
@@ -281,5 +313,61 @@ describe('incremental streaming display', () => {
       unsubscribe()
       ui.closePanel()
     }
+  })
+})
+
+describe('error rendering', () => {
+  afterEach(cleanup)
+
+  /**
+   * Reject the host call with one wire error and return the settled panel text.
+   *
+   * The error must be an instance of the REAL `EnhanceClientError` — the button
+   * switches on `instanceof`, so a look-alike class falls through to the generic
+   * internal branch and the assertions below would pass for the wrong reason.
+   * @param error - the wire error detail the host would send.
+   * @returns the body's text content once the loading phase has ended.
+   */
+  async function renderError(error: { code: string; params?: Record<string, unknown>; message?: string }): Promise<string> {
+    const input = makeFakeInput({ draft: '原文' })
+    renderComposer(input, { setDraft: vi.fn() } as never, 's1')
+    vi.mocked(requestEnhance).mockRejectedValue(new EnhanceClientError(error as never))
+    fireEvent.click(enhanceButton())
+    // The loading line is gone only once the panel holds a result or an error.
+    await waitFor(() => {
+      expect(document.body.textContent ?? '').not.toContain(zh['panel.loading'])
+    })
+    return document.body.textContent ?? ''
+  }
+
+  // Regression: the wire carries kebab-case reasons (`max-tokens`) while the
+  // dictionary keys are camelCase (`error.upstream.maxTokens`), so the raw
+  // lookup never matched and EVERY specific fix hint silently degraded to the
+  // generic "模型服务返回错误，请重试" line — the user could not tell an output-cap
+  // failure from an auth failure.
+  it('renders the specific upstream hint for a kebab-case reason', async () => {
+    const text = await renderError({ code: 'upstream', params: { reason: 'max-tokens' } })
+    expect(text).toContain(zh['error.upstream.maxTokens'])
+    expect(text).not.toContain(zh['error.upstream'])
+  })
+
+  it('renders the specific hint for every reason the host can send', async () => {
+    for (const reason of ['max-tokens', 'tool-call', 'context-window', 'rate-limit']) {
+      cleanup()
+      const text = await renderError({ code: 'upstream', params: { reason } })
+      const key = `error.upstream.${reason.replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase())}` as keyof typeof zh
+      expect(text, `reason ${reason}`).toContain(zh[key])
+    }
+  })
+
+  it('renders the provider detail line when the host sends one', async () => {
+    const text = await renderError({ code: 'upstream', params: { reason: 'auth' }, message: 'llm-deepseek: no API key' })
+    expect(text).toContain(zh['error.upstream.auth'])
+    expect(text).toContain('llm-deepseek: no API key')
+  })
+
+  it('degrades to the generic line for an unknown reason', async () => {
+    const text = await renderError({ code: 'upstream', params: { reason: 'brand-new-reason' } })
+    expect(text).toContain(zh['error.upstream'])
   })
 })

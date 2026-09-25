@@ -20,6 +20,26 @@ interface CommandsFace {
 }
 
 /**
+ * The invoking session's id.
+ *
+ * The current `Agent` contract is `{ readonly id: SessionId }` — there is no
+ * `session` object. The nested shape is the older contract this plugin was
+ * written against, and reading it unconditionally threw
+ * `Cannot read properties of undefined (reading 'id')` on every `/enhance`
+ * invocation. Both shapes are probed, and a host exposing neither yields
+ * `undefined`, which simply drops the session route instead of failing the
+ * command.
+ * @param invocation - the command invocation.
+ * @returns the session id when the host exposes one.
+ */
+function sessionIdOf(invocation: CommandInvocation): string | undefined {
+  const agent = invocation.agent as { id?: unknown; session?: { id?: unknown } } | undefined
+  const nested = agent?.session?.id
+  if (typeof nested === 'string' && nested !== '') return nested
+  return typeof agent?.id === 'string' && agent.id !== '' ? agent.id : undefined
+}
+
+/**
  * Register the /enhance command on the (optional) commands service. Absent
  * service is a silent no-op so the plugin still loads in UI-less spines.
  * @param ctx - registrant context.
@@ -47,11 +67,12 @@ export function registerEnhanceCommand(ctx: Context, readConfig: () => Config): 
         return { kind: 'error', text: formatInputCheckZh(check) }
       }
       try {
+        const sessionId = sessionIdOf(invocation)
         const value = await runEnhance(ctx, config, {
           text: raw,
-          sessionRoute: sessionRouteOf(ctx, invocation.agent.session.id),
+          sessionRoute: sessionRouteOf(ctx, sessionId),
           signal: invocation.signal,
-          sessionId: invocation.agent.session.id,
+          ...sessionId !== undefined ? { sessionId } : {},
         })
         return { kind: 'success', text: value.text }
       } catch (error) {

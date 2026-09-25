@@ -76,6 +76,14 @@ function installSettingsSectionCompat(ctx: Context, namespace: string, schema: u
  * entry and is re-resolved per request, so Settings → 插件配置 changes reach
  * the very next call.
  *
+ * The `prompt-enhance` form on that page comes from the `Config` export alone:
+ * the loader mounts `unwrapExports(module)` and Cordis records `plugin.Config`
+ * as the entry's runtime schema, which `dsh-settings` projects into a form.
+ * There is no registration call to make — the earlier `installSettingsSection`
+ * paths are dead on current hosts (`ctx.settings.installSection` does not exist
+ * and `@deepseek-ai/dsh-settings` exports no `installSettingsSection`), and they
+ * failed silently. Keeping the schema a named export is what keeps it visible.
+ *
  * Besides the declared `inject` services (llm, webServer — both required),
  * the host half optionally reads three more through `ctx.get` with
  * `undefined` fallbacks, degrading gracefully when absent:
@@ -86,7 +94,10 @@ function installSettingsSectionCompat(ctx: Context, namespace: string, schema: u
  * @param config - deployment configuration (schema defaults filled by the loader).
  */
 export function apply(ctx: Context, config: PluginConfig = { ...DEFAULT_CONFIG }): void {
-  let current: () => PluginConfig = () => config
+  // A partial stored section leaves every absent key `undefined`, and a function
+  // default parameter only fires when nothing was passed at all. Spread the
+  // defaults underneath so a section that sets one field keeps the rest.
+  let current: () => PluginConfig = () => ({ ...DEFAULT_CONFIG, ...(config ?? {}) })
   installSettingsSectionCompat(ctx, PROMPT_ENHANCE_NAMESPACE, Config, config, {
     setSource: (source) => {
       current = source as () => PluginConfig

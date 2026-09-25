@@ -8,6 +8,22 @@
 
 [English](./README.md) | 简体中文
 
+> ### 这是一个 Fork
+>
+> 本仓库是 [`rongxingda/dsh-prompt-enhance`](https://github.com/rongxingda/dsh-prompt-enhance)
+> 的维护分支,跟进 **DSH 0.1.7-rc.1**。上游为 Apache-2.0,原始版权与许可证保留在
+> [LICENSE](./LICENSE),本分支改动的文件列在 [CHANGELOG.md](./CHANGELOG.md)。
+>
+> 在 0.2.1 基础上补的东西,都是上游基线(`dsh >= 0.1.1-rc.2`)没覆盖到的漂移:
+>
+> - **它能加载了。** `InputState.imageIds` 已更名为 `attachmentIds`,旧字段名会让按钮直接崩掉整个输入框。
+> - **增强能用了。** `settings.get(...)` 已不存在,路由解析每次都会抛 `ctx.get(...)?.get is not a function`;现在改从 `agentDefaultModel` 服务读取全局默认模型。`/enhance` 命令读的是 `invocation.agent.session.id`,而当前契约是 `agent.id`。
+> - **费用降到零头。** 改写现在显式发送 `reasoningEffort`,默认 `off`:在 `deepseek-flash` 上对同一句话实测,`off` 输出 252 token,而模型自身默认档(`high`)要 **2897**。
+> - **失败可读了。** 失败原因是 kebab-case(`max-tokens`),而字典键是 camelCase(`upstream.maxTokens`),导致所有具体修复提示都静默退化成同一句通用文案。
+> - **配置够得着了。** 宿主一直在提供 schema,但 DSH 插件不会自动获得设置界面——本分支注册了 `settings.section` 并提供了全部 17 个字段的表单。
+>
+> 上游仍作为 `upstream` 远程保留(`git rebase upstream/main`),改动是**按需挑选**而不是全量合并。
+
 ---
 
 ## 为什么需要它
@@ -25,7 +41,8 @@
 | 💬 **`/enhance` 命令** | 斜杠面板直接改写任意文本;结果不进入模型历史 |
 | 🧠 **模型路由** | 设置成对覆盖 → 当前会话模型 → 全局默认模型,依次回退 |
 | 🔑 **零凭据配置** | 调用走 harness LLM 服务,密钥来自 harness 凭据存储 |
-| ⚙️ **配置热生效** | 模型覆盖、温度、预算、系统提示词、快捷键,全部在 设置 → 插件配置 即改即用 |
+| ⚙️ **专属设置页** | 在「设置」里有一个独立的 **提示词增强** 页,每个配置项一个控件(并支持逐项恢复默认);改完下一次调用即生效 |
+| 💸 **默认省钱** | 改写默认以 `reasoningEffort: off` 运行——改写是短而明确的任务,而模型自身的默认档要花约 11 倍的输出 token 却没有更好的结果(deepseek-flash 实测:同一句话 252 vs 2897 token) |
 | 🛡️ **草稿安全** | 空输入、超长、仅图片、含命令块在本地拦截;上游失败映射为可读提示;失败绝不改动草稿 |
 
 ![dsh web 中实机运行的预览面板:原文与增强结果并排,含模型信息与回填/复制操作](https://raw.githubusercontent.com/rongxingda/dsh-prompt-enhance/main/docs/evidence-prompt-enhance-panel.png)
@@ -115,7 +132,8 @@ dsh plugin --profile web remove dsh-prompt-enhance
 | `enabled` | `true` | 总开关;关闭隐藏按钮并停用所有触发方式 |
 | `provider` + `model` | 空 | 显式路由覆盖;必须**成对**填写(或都留空以跟随当前会话模型) |
 | `temperature` | `0.3` | 低温使改写更忠实于原意 |
-| `maxOutputTokens` | `2048` | 单次增强调用的输出 token 预算 |
+| `reasoningEffort` | `off` | 转发给改写调用的推理预算:`off` / `low` / `high` / `inherit`(不传该字段,跟随模型自身默认档)。改写是短而明确的任务,深度思考几乎没有收益、成本却很高——在 `deepseek-flash` 上对同一句话实测:`off` 用 **252** 输出 token、产出 439 字符;`low` 用 619;`high`(模型默认档)用 **2897** 才 979 字符。只有在该路由拒绝显式档位时才改 `inherit` |
+| `maxOutputTokens` | `8192` | 单次增强调用的输出 token 预算。推理与正文**共用**这份预算且推理在前,上限偏低时可能被思考全部吃掉、最终只有思考没有正文——原来的 `2048` 正是如此 |
 | `maxInputChars` | `12000` | 输入字符数上限(按 Unicode 字符统计,不是 token 数;一个 emoji 算一个字符);超限**拒绝而不截断** |
 | `timeoutMs` | `60000` | 单次调用的端到端超时 |
 | `systemPrompt` | 内置策略 | 自定义增强策略文本;与内置策略如何组合见 `strategyMode` |

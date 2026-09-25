@@ -28,6 +28,22 @@ export interface ResultPanelProps {
 const retryable = (code: string | undefined): boolean => code === 'upstream' || code === 'timeout' || code === 'internal'
 
 /**
+ * Dictionary key for one upstream reason.
+ *
+ * The wire carries kebab-case reasons (`enhancer.ts` `UpstreamReason`:
+ * `max-tokens`, `tool-call`, …) while the dictionary keys are camelCase
+ * (`error.upstream.maxTokens`). Looking the raw reason up produced a key that is
+ * never in `zh`, so EVERY specific fix hint silently fell back to the generic
+ * "模型服务返回错误" line — the user saw no actionable cause for a plain
+ * output-cap failure. Convert before lookup; an unknown reason still misses and
+ * degrades to the generic line.
+ */
+function upstreamKeyOf(reason: string): PromptEnhanceKey {
+  const camel = reason.replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase())
+  return `error.upstream.${camel}` as PromptEnhanceKey
+}
+
+/**
  * Primary line for a server-side error, localized by the stable code and its
  * structured params: an upstream `reason` picks a specific fix hint when one
  * exists, and an over-length rejection reuses the too-long input message the
@@ -43,7 +59,7 @@ function localizedErrorMessage(
     return t('error.tooLong', { count: params.count, max: params.max })
   }
   if (code === 'upstream' && typeof params?.reason === 'string') {
-    const specific = `error.upstream.${params.reason}` as PromptEnhanceKey
+    const specific = upstreamKeyOf(params.reason)
     if (specific in zh) return t(specific)
   }
   switch (code) {
