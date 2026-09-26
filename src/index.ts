@@ -102,6 +102,11 @@ function installSettingsSectionCompat(ctx: Context, namespace: string, schema: u
     // `settingsNamespace` are real exports of 0.1.1-rc.2 and absent from
     // 0.1.7-rc.2.) The dynamic import keeps a cohort that never had them from
     // evaluating the names at load time, and the runtime probe decides.
+    // The trailing `.catch` is the load-bearing part, not decoration: it is the
+    // rejection sink for everything in the continuation above, including anything
+    // a future edit adds. `void promise` alone would let a throw escape as an
+    // unhandled rejection, which is strictly worse than a missing settings
+    // section — it can surface as an activation failure elsewhere.
     void import('@deepseek-ai/dsh-settings').then((mod) => {
       const legacy = mod as unknown as {
         installSettingsSection?: (owner: Context, ns: unknown, schema: unknown, entry: unknown, hooks: unknown) => void
@@ -110,9 +115,20 @@ function installSettingsSectionCompat(ctx: Context, namespace: string, schema: u
       if (typeof legacy.installSettingsSection === 'function' && typeof legacy.settingsNamespace === 'function') {
         legacy.installSettingsSection(ctx, legacy.settingsNamespace(namespace), schema, entry, hooks)
       }
-    }, () => {
-      // Settings integration is optional by design; the plugin keeps working
-      // on its composition entry when the module cannot be resolved at all.
+    }).catch(() => {
+      // Two distinct failures land here, and both are survivable:
+      // 1. the module cannot be resolved at all — settings integration is
+      //    optional by design, and the plugin keeps working on its composition
+      //    entry;
+      // 2. the legacy helper THROWS, because it speaks an API the mounted service
+      //    no longer provides. A stale build in this project reached the host's
+      //    settings service through here and died with
+      //    `TypeError: sctx.settings.register is not a function`; a modern host
+      //    derives its form from the plugin's `Config` schema and exposes no
+      //    `register()` at all. (`dsh-market` logged the same complaint.)
+      //
+      // Swallowing is correct rather than lenient: the section is an OPTIONAL
+      // layer, and the schema is still served as a named export either way.
     })
   })
 }
