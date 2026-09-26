@@ -135,6 +135,34 @@ describe('POST /prompt-enhance/enhance (real http)', () => {
     })
   })
 
+  /**
+   * The route must ANSWER a POST on its own path.
+   *
+   * Regression lock for a real break: with `webServer` dropped from the plugin's
+   * `inject`, `ctx.get('webServer')` returned undefined, `registerEnhanceRoute`
+   * returned early, and the path fell through to the web frontend's static
+   * handler — which answers `405 Method Not Allowed` for a POST on a path it
+   * serves for GET. The browser then failed to parse that HTML as JSON and told
+   * the user the host's response was unparseable.
+   *
+   * The assertions are deliberately about the ROUTE rather than the payload: a
+   * 405 with an HTML body must fail here, which a payload-shaped test would not
+   * necessarily catch.
+   */
+  it('answers POST on its own path instead of falling through to the static handler', async () => {
+    const { port } = server.address() as AddressInfo
+    const response = await fetch(`http://127.0.0.1:${port}/prompt-enhance/enhance`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: '帮我写个爬虫' }),
+    })
+    // Not 404/405: the plugin's prefix route owns this path.
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('application/json')
+    // …and the body really is JSON, not an HTML page that merely says so.
+    await expect(response.json()).resolves.toMatchObject({ ok: true })
+  })
+
   it('trims spaced provider/model from settings before the adapter call', async () => {
     const captured: GenerateOptions[] = []
     const capturingLlm = {

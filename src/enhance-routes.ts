@@ -255,16 +255,18 @@ async function serveEnhance(ctx: Context, readConfig: () => Config, gate: Admiss
 const mountedContexts = new WeakSet<Context>()
 
 /**
- * Register the /prompt-enhance prefix route on the shared webserver. Absent
- * webserver (non-web composition) is a silent no-op, matching the
- * describe-image family pattern. A second registration on the same context is
- * ignored.
+ * Register the /prompt-enhance prefix route on the shared webserver. A second
+ * registration on the same context is ignored.
  *
- * `webServer` is OPTIONAL — this function is the reason it is not in the
- * plugin's `inject` list. A composition with no HTTP surface keeps its
- * `/enhance` command and settings schema and simply has no route; making the
- * service required instead would strand the entire plugin in `pending`.
- * @param ctx - registrant context; `webServer` is probed, not required.
+ * The defensive `ctx.get('webServer')` covers a web server that mounts LATER (or
+ * one this plugin's fiber cannot see), not one that is absent: **`ctx.get` can
+ * only reach a service the plugin injected**, so `webServer` must stay in the
+ * plugin's `inject` list. Dropping it there made this function return early on
+ * every host — the route silently vanished and the path fell through to the web
+ * frontend's static handler, which answers `405 Method Not Allowed` for a POST,
+ * which the browser then fails to parse as JSON. Keep the guard; keep the
+ * declaration.
+ * @param ctx - registrant context.
  * @param readConfig - per-request config reader so settings changes apply immediately.
  */
 export function registerEnhanceRoute(ctx: Context, readConfig: () => Config): void {

@@ -9,20 +9,31 @@
  * Service contract — the honest table. Only `llm` is required; every other
  * capability is declared here so a future edit cannot quietly re-harden it:
  *
- * | service      | requirement                | absent behaviour                     |
- * |--------------|----------------------------|--------------------------------------|
- * | `llm`        | REQUIRED (inject)          | the plugin does not activate         |
- * | `webServer`  | optional (`ctx.get`)       | no HTTP route; `/enhance` still works |
- * | `commands`   | optional (`ctx.get`)       | no `/enhance`; the route still works  |
- * | `sessions`   | optional (`ctx.get`)       | route resolution drops that layer     |
- * | `settings`   | optional (`ctx.inject`)    | composition entry keeps its values    |
+ * | service      | declared in `inject` | absent behaviour                      |
+ * |--------------|----------------------|---------------------------------------|
+ * | `llm`        | YES                  | the plugin does not activate          |
+ * | `webServer`  | YES                  | the plugin does not activate          |
+ * | `commands`   | no (`ctx.get`)       | no `/enhance`; the HTTP route remains |
+ * | `sessions`   | no (`ctx.get`)       | route resolution drops that layer     |
+ * | `settings`   | no (`ctx.inject`)    | composition entry keeps its values    |
  *
- * `webServer` in particular must NOT return to `inject`: a non-web composition
- * (headless, ACP, a bare spine) has no web server, and making it required keeps
- * the whole plugin — including the `/enhance` command plane and the settings
- * schema, neither of which serves HTTP — in `pending (waiting for service:
- * webServer)` forever. `registerEnhanceRoute` already treats it as optional, so
- * a hard declaration was the inconsistency, not the fix.
+ * **`webServer` must stay in `inject`, even though the route code reads it
+ * defensively.** An earlier change moved it out on the reasoning that
+ * `registerEnhanceRoute` opens with `ctx.get('webServer')` and returns when
+ * absent — i.e. that the body already "treated it as optional". That reasoning
+ * was wrong: **`ctx.get` can only reach a service the plugin actually
+ * injected**, so removing it from `inject` did not make the route optional, it
+ * made the route IMPOSSIBLE. Both declarations then disagreed silently, and the
+ * symptom appeared only in a real host:
+ *
+ *   inject = ['llm']              → POST /prompt-enhance/enhance → 405 Method Not Allowed
+ *   inject = ['llm', 'webServer'] → POST /prompt-enhance/enhance → 200 application/json
+ *
+ * The 405 came from the web frontend's static route, which matches the path for
+ * GET; the client then failed to parse HTML as JSON and reported "宿主服务返回了
+ * 无法解析的响应". The defensive `ctx.get` remains correct and useful — it covers
+ * a web server that mounts LATER, not one that is absent — but it is not a
+ * licence to drop the declaration.
  * @module dsh-prompt-enhance
  */
 
@@ -34,12 +45,13 @@ import { registerEnhanceCommand } from './enhance-command'
 export const name = 'prompt-enhance'
 
 /**
- * Required services. `llm` is the enhancement itself and the only hard
- * dependency; everything else is probed at the point of use (see the table in
- * the module doc), so the plugin activates in any composition that can call a
- * model — including ones with no HTTP surface at all.
+ * Required services: the model call and the HTTP surface.
+ *
+ * `webServer` is here because Cordis gates `ctx.get` on injection (see the module
+ * doc) — declaring it is what MAKES it reachable. `llm` is read per request
+ * through `ctx.get('llm')`, which only works for the same reason.
  */
-export const inject = ['llm']
+export const inject = ['llm', 'webServer']
 
 export { Config, DEFAULT_CONFIG, PROMPT_ENHANCE_NAMESPACE, resolveConfig } from './config'
 export type { StrategyMode } from './config'
@@ -118,11 +130,12 @@ function installSettingsSectionCompat(ctx: Context, namespace: string, schema: u
  * and `@deepseek-ai/dsh-settings` exports no `installSettingsSection`), and they
  * failed silently. Keeping the schema a named export is what keeps it visible.
  *
- * `llm` is the only required service (it is what `inject` declares). Every other
- * capability this module wires is optional and probed at its point of use, so an
- * absent one costs that capability and nothing else — `webServer` (HTTP route,
- * probed inside `registerEnhanceRoute`), `commands` (`/enhance`), `sessions` and
- * `settings` (route resolution layers). See the module doc for the full table.
+ * `llm` and `webServer` are the required services (both in `inject`). The
+ * remaining capabilities this module wires are genuinely optional and probed at
+ * their point of use, so an absent one costs that capability and nothing else:
+ * `commands` (`/enhance`), `sessions` and `settings` (route resolution layers).
+ * See the module doc for the full table and for why `webServer` cannot be
+ * demoted to an optional probe.
  * @param ctx - registrant context.
  * @param config - deployment configuration (schema defaults filled by the loader).
  */

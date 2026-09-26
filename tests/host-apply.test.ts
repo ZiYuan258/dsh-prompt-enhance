@@ -1,6 +1,45 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { apply } from '../src/index'
 import { PROMPT_ENHANCE_NAMESPACE } from '../src/config'
+import { inject } from '../src/index'
+
+/**
+ * The service declaration is load-bearing, not documentation.
+ *
+ * Cordis gates `ctx.get(name)` on injection: the call can only reach a service
+ * the plugin actually declared. `registerEnhanceRoute` reads
+ * `ctx.get('webServer')` and `runEnhance` reads `ctx.get('llm')`, so BOTH must
+ * appear in `inject` — the defensive `ctx.get` guard is not a substitute for the
+ * declaration.
+ *
+ * This was learned the hard way. `webServer` was moved out of `inject` on the
+ * reasoning that the route body "already treats it as optional". It does — and
+ * that is exactly why the removal was invisible to unit tests: the body returned
+ * early, nothing threw, and only a REAL host showed the damage:
+ *
+ *   inject = ['llm']              → POST /prompt-enhance/enhance → 405 Method Not Allowed
+ *   inject = ['llm', 'webServer'] → POST /prompt-enhance/enhance → 200 application/json
+ *
+ * The 405 is the web frontend's static handler answering the path it owns for
+ * GET; the browser then failed to parse that HTML as JSON and reported the
+ * host's response as unparseable. Hence an explicit, named assertion here rather
+ * than a comment — the failure mode is a silent behaviour loss, and the only
+ * cheap guard is refusing the edit.
+ */
+describe('required service declaration', () => {
+  it('injects llm and webServer, because ctx.get cannot reach an uninjected service', () => {
+    expect(inject).toContain('llm')
+    expect(inject).toContain('webServer')
+  })
+
+  it('does not inject the services that ARE genuinely optional', () => {
+    // These are probed per use and must not harden the activation gate: a
+    // composition without a command plane still serves the HTTP route.
+    expect(inject).not.toContain('commands')
+    expect(inject).not.toContain('sessions')
+    expect(inject).not.toContain('settings')
+  })
+})
 
 /**
  * `apply()` must register its settings section on both harness generations,
