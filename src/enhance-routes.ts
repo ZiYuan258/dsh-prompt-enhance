@@ -259,7 +259,12 @@ const mountedContexts = new WeakSet<Context>()
  * webserver (non-web composition) is a silent no-op, matching the
  * describe-image family pattern. A second registration on the same context is
  * ignored.
- * @param ctx - registrant context; webServer is required.
+ *
+ * `webServer` is OPTIONAL — this function is the reason it is not in the
+ * plugin's `inject` list. A composition with no HTTP surface keeps its
+ * `/enhance` command and settings schema and simply has no route; making the
+ * service required instead would strand the entire plugin in `pending`.
+ * @param ctx - registrant context; `webServer` is probed, not required.
  * @param readConfig - per-request config reader so settings changes apply immediately.
  */
 export function registerEnhanceRoute(ctx: Context, readConfig: () => Config): void {
