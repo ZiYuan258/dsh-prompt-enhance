@@ -2,6 +2,39 @@
 
 All notable changes are documented here. Versions follow the fork's own numbering from 0.3.0 on — npm carries the upstream `dsh-prompt-enhance`, so these numbers are not published there. Apache-2.0 attribution and the list of modified files live in [README.md](./README.md).
 
+## 0.3.1 (2026-09-26)
+
+Fix an unhandled rejection in the legacy settings compatibility path. A patch
+release: no new configuration, no API change, and nothing in the shipped plugin
+behaviour differs except that a failure which used to escape no longer does.
+
+- **The legacy settings call no longer leaks a rejection.** It ran as
+  `void import('@deepseek-ai/dsh-settings').then(onFulfilled, onImportRejected)`,
+  and `then`'s second argument covers only the import — never a throw from
+  `onFulfilled` itself. When a legacy helper threw (it speaks an API a modern host
+  no longer provides: the host derives the form from the plugin's `Config` schema
+  and exposes no `register()`), the failure escaped as an unhandled rejection.
+  That is strictly worse than the missing section it represents, because the
+  section is optional and the schema is served as a named export either way, while
+  an unhandled rejection can surface as an activation failure elsewhere. A trailing
+  `.catch()` now sinks the whole chain.
+
+- **Regression coverage: 204 tests (was 199).** Two new files, deliberately split
+  because `vi.mock`'s factory is evaluated once per test file and one file cannot
+  present two module shapes — a modern host with a module that has no legacy
+  exports, and the throwing-helper case. Both record *which* settings methods the
+  plugin reaches for rather than asserting a named method is absent, so
+  re-introducing any legacy call fails in the suite instead of on someone's boot.
+
+  The suite was validated red-then-green rather than assumed: the pre-fix build
+  produced `AssertionError: expected [ …(1) ] to deeply equal []` and the fixed
+  source passed. That check earned its keep — the first version of the test was
+  green against unfixed code, because the escaping rejection is not reported until
+  a macrotask after the call.
+
+v0.3.0 is unchanged and remains the published release for the 0.3 line's
+compatibility work.
+
 ## Documentation language
 
 **Chinese is now the default for every self-description document.** `README.md`
@@ -14,6 +47,9 @@ the repository presents first — and of which filename, since GitHub renders
 `README.md` and nothing else. The former `README.zh-CN.md` is gone: its content is
 `README.md` now, which is why that old link 404s. Nothing was retranslated, and no
 claim changed; only the ordering and the cross-links did.
+
+This landed before 0.3.1 and is documentation-only: no source, test, or build
+output changed with it.
 
 ## Corrections after 0.3.0
 
