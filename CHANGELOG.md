@@ -2,6 +2,19 @@
 
 All notable changes are documented here. Versions follow the fork's own numbering from 0.3.0 on — npm carries the upstream `dsh-prompt-enhance`, so these numbers are not published there. Apache-2.0 attribution and the list of modified files live in [README.md](./README.md).
 
+## Documentation language
+
+**Chinese is now the default for every self-description document.** `README.md`
+and `CONTRIBUTING.md` are Chinese; the English versions live at
+[README.en.md](./README.en.md) and [CONTRIBUTING.en.md](./CONTRIBUTING.en.md),
+with the language switch at the top of each file.
+
+Both documents existed in both languages before, so this is a change of which one
+the repository presents first — and of which filename, since GitHub renders
+`README.md` and nothing else. The former `README.zh-CN.md` is gone: its content is
+`README.md` now, which is why that old link 404s. Nothing was retranslated, and no
+claim changed; only the ordering and the cross-links did.
+
 ## Corrections after 0.3.0
 
 **`webServer` stays in `inject`.** A change briefly dropped it, on the reasoning

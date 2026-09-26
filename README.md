@@ -3,139 +3,109 @@
 [![CI](https://github.com/ZiYuan258/dsh-prompt-enhance/actions/workflows/ci.yml/badge.svg)](https://github.com/ZiYuan258/dsh-prompt-enhance/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
 
-**Prompt enhancement for the [DeepSeek Harness](https://github.com/deepseek-ai) web GUI** — one click turns a rough composer draft into a well-structured prompt: explicit role and goal, executable steps, output format, acceptance criteria, and edge cases. Your intent is never changed, nothing is fabricated, and the original draft is always preserved.
+**DeepSeek Harness Web GUI 的「提示词增强」插件** —— 一键把输入框里的草稿改写为结构化提示词:明确的角色与目标、可执行步骤、输出格式、验收标准、边界条件。不改变原意、不凭空编造需求,原文始终保留。
 
-English | [简体中文](./README.zh-CN.md)
+简体中文 | [English](./README.en.md)
 
-> ### This is a fork
+> ### 这是一个 Fork
 >
-> A maintained fork of [`rongxingda/dsh-prompt-enhance`](https://github.com/rongxingda/dsh-prompt-enhance).
+> 本仓库是 [`rongxingda/dsh-prompt-enhance`](https://github.com/rongxingda/dsh-prompt-enhance) 的维护分支。
 >
-> **Validated on DSH 0.1.7-rc.2**, on a real host rather than in tests alone:
+> **已在 DSH 0.1.7-rc.2 的真实宿主上完成验证**——不只是跑测试:
 >
-> - plugin activation and both halves mounting (`Config` schema served, composer
->   button registered in the slot tree);
-> - a real HTTP enhancement request returning `200` with a live `deepseek-flash`
->   rewrite;
-> - a real GUI `/enhance` command execution (recorded as `command/run` in the
->   session log, result shown in the command plane and kept out of model history);
-> - the Settings page reading **and persisting** configuration.
+> - 插件激活、两个半边均挂载成功(`Config` schema 已投影、输入框按钮已注册进 slot 树);
+> - 真实 HTTP 增强请求返回 `200`,并由 `deepseek-flash` 实际完成改写;
+> - GUI 中 `/enhance` 命令真实执行(会话日志记录到 `command/run`,结果出现在命令平面且不进入对话历史);
+> - 设置页能读取**并持久化**配置。
 >
-> Every DSH devDependency is pinned to `0.1.7-rc.2`, so typecheck and the full
-> suite run against that API surface too. The API drift below was first read off a
-> live `0.1.7-rc.1` host; see [CHANGELOG.md](./CHANGELOG.md) for the per-claim detail.
+> 所有 DSH devDependency 均锁定 `0.1.7-rc.2`,类型检查与全套测试同样跑在该 API 面上。下面的 API 漂移最早是从运行中的 `0.1.7-rc.1` 宿主读出;逐条证据见 [CHANGELOG.md](./CHANGELOG.md)。
 >
-> Requires the harness build of schemastery (`@deepseek-ai/schemastery`): the
-> schema uses `.volatile()`, which the public `schemastery` package does not
-> provide — that is both what makes the Settings form render and a load-time
-> requirement, hence the `>=0.1.7-rc.1` engine floor.
+> 需要宿主自带的 schemastery 构建(`@deepseek-ai/schemastery`):schema 使用了 `.volatile()`,公共 `schemastery` 包并不提供——它既是设置表单能渲染出来的前提,也是**加载期**硬要求,这正是 `>=0.1.7-rc.1` 这个引擎下限的来由。
 >
-> Upstream sources are Apache-2.0; the original copyright and licence are retained
-> in [LICENSE](./LICENSE).
+> 上游为 Apache-2.0,原始版权与许可证保留在 [LICENSE](./LICENSE)。
 >
-> What this fork adds on top of 0.2.1 — all of it drift the upstream baseline
-> (`dsh >= 0.1.1-rc.2`) never accounted for:
+> 在 0.2.1 基础上补的东西,都是上游基线(`dsh >= 0.1.1-rc.2`,本分支已提高到 `>=0.1.7-rc.1`)没覆盖到的漂移:
 >
-> - **It loads at all.** `InputState.imageIds` became `attachmentIds`, and the
->   composer button crashed the whole input box on the older field name.
-> - **Enhancement works.** `settings.get(...)` no longer exists, so route
->   resolution threw `ctx.get(...)?.get is not a function` on every call; the
->   harness default model is now read from the `agentDefaultModel` service.
->   `/enhance` read `invocation.agent.session.id`; the agent id is `agent.id`.
-> - **It costs a fraction as much.** The rewrite now sends an explicit
->   `reasoningEffort`, defaulting to `off`: measured on `deepseek-flash` for one
->   ordinary draft, 252 output tokens at `off` versus **2897** at the model's own
->   default (`high`).
-> - **Failures are readable.** Reasons arrive kebab-case (`max-tokens`) while the
->   dictionary keys are camelCase (`upstream.maxTokens`), so every specific fix
->   hint silently degraded to one generic line.
-> - **The configuration is reachable.** The schema was served by the host all
->   along, but a DSH plugin gets no Settings UI for free — the fork registers the
->   `settings.section` seat and ships a form for all 17 fields.
+> - **它能加载了。** `InputState.imageIds` 已更名为 `attachmentIds`,旧字段名会让按钮直接崩掉整个输入框。
+> - **增强能用了。** `settings.get(...)` 已不存在,路由解析每次都会抛 `ctx.get(...)?.get is not a function`;现在改从 `agentDefaultModel` 服务读取全局默认模型。`/enhance` 命令读的是 `invocation.agent.session.id`,而当前契约是 `agent.id`。
+> - **费用降到零头。** 改写现在显式发送 `reasoningEffort`,默认 `off`:在 `deepseek-flash` 上对同一句话实测,`off` 输出 252 token,而模型自身默认档(`high`)要 **2897**。
+> - **失败可读了。** 失败原因是 kebab-case(`max-tokens`),而字典键是 camelCase(`upstream.maxTokens`),导致所有具体修复提示都静默退化成同一句通用文案。
+> - **配置够得着了。** 宿主一直在提供 schema,但 DSH 插件不会自动获得设置界面——本分支注册了 `settings.section` 并提供了全部 17 个字段的表单。
 >
-> Upstream stays wired as the `upstream` remote (`git rebase upstream/main`), and
-> changes are selected deliberately rather than merged wholesale.
+> 上游仍作为 `upstream` 远程保留(`git rebase upstream/main`),改动是**按需挑选**而不是全量合并。
 
 ---
 
-## Why
+## 为什么需要它
 
-Good agent prompts state *who the model should be*, *what to deliver*, *in what format*, and *how success is judged*. Most drafts don't. This plugin adds a **WorkBuddy-style "enhance" affordance** to the dsh composer: it sends your draft through a low-temperature rewrite pass (via the harness's own LLM service), shows the result next to the original, and lets you apply, copy, or discard it. Undo is one click away, and every failure path leaves your draft exactly as you typed it.
+好的智能体提示词会讲清*让模型扮演谁*、*交付什么*、*以什么格式*、*怎样算合格*——而大多数草稿不会。本插件给 dsh 输入框加上 WorkBuddy 风格的「增强」入口:草稿经低温重写(走 harness 自带的 LLM 服务),结果与原文并排对比,你可以回填、复制或丢弃。撤销只需一键,且**任何失败路径都不会改动你输入的内容**。
 
-## Features
+## 功能一览
 
 | | |
 |---|---|
-| ✨ **Composer button** | A small button in the input box's tool row (next to the send button), always at hand |
-| 🔀 **Preview panel** | Original vs. enhanced side by side, with model name and elapsed time |
-| ↩️ **One-click undo** | After applying, a quiet bar above the composer restores the original draft |
-| ⌨️ **Shortcut** | Default `Ctrl+Alt+E`, fully configurable, acts on the composer you are working in |
-| 💬 **`/enhance` command** | Rewrite any text from the slash-command plane; the result never enters model history |
-| 🧠 **Model routing** | Settings pair → current session model → harness default model, in that order |
-| 🔑 **Zero credential setup** | Calls ride the harness LLM service; keys come from the harness credential store |
-| ⚙️ **Its own Settings page** | A dedicated **提示词增强 / Prompt enhance** section in Settings, with one control per config field (and a per-field reset). Edits hot-apply to the next call |
-| 💸 **Cheap by default** | The rewrite runs with `reasoningEffort: off` — a rewrite is short and well-specified, and the model's own default effort cost ~11× the output tokens for no better result (measured on `deepseek-flash`: 252 vs 2897 tokens for one draft) |
-| 🛡️ **Draft safety** | Empty, over-length, images-only, and command-chip inputs are rejected locally; upstream failures are mapped to readable messages; the draft is never mutated on failure |
+| ✨ **输入框按钮** | 工具栏内发送键旁的小按钮,随手可及 |
+| 🔀 **对比预览面板** | 原文与增强结果左右并排,附模型名与耗时 |
+| ↩️ **一键撤销** | 回填后输入框上方出现撤销条,一键恢复原文 |
+| ⌨️ **快捷键** | 默认 `Ctrl+Alt+E` 可配置,作用于你正在使用的输入框 |
+| 💬 **`/enhance` 命令** | 斜杠面板直接改写任意文本;结果不进入模型历史 |
+| 🧠 **模型路由** | 设置成对覆盖 → 当前会话模型 → 全局默认模型,依次回退 |
+| 🔑 **零凭据配置** | 调用走 harness LLM 服务,密钥来自 harness 凭据存储 |
+| ⚙️ **专属设置页** | 在「设置」里有一个独立的 **提示词增强** 页,每个配置项一个控件(并支持逐项恢复默认);改完下一次调用即生效 |
+| 💸 **默认省钱** | 改写默认以 `reasoningEffort: off` 运行——改写是短而明确的任务,而模型自身的默认档要花约 11 倍的输出 token 却没有更好的结果(deepseek-flash 实测:同一句话 252 vs 2897 token) |
+| 🛡️ **草稿安全** | 空输入、超长、仅图片、含命令块在本地拦截;上游失败映射为可读提示;失败绝不改动草稿 |
 
-![The preview panel running in dsh web: original and enhanced prompt side by side with model info, fill-back and copy actions](https://raw.githubusercontent.com/ZiYuan258/dsh-prompt-enhance/main/docs/evidence-prompt-enhance-panel.png)
+![dsh web 中实机运行的预览面板:原文与增强结果并排,含模型信息与回填/复制操作](https://raw.githubusercontent.com/ZiYuan258/dsh-prompt-enhance/main/docs/evidence-prompt-enhance-panel.png)
 
-## How it works
+## 工作原理
 
 ```mermaid
 flowchart LR
-    A[Composer draft] --> B{Local guards<br/>empty / length / chips / busy}
-    B -- pass --> C["POST /prompt-enhance/enhance<br/>(loopback-fenced host route)"]
-    B -- reject --> P[Preview panel:<br/>readable error, draft untouched]
-    C --> D["ctx.llm.stream<br/>rewrite with system strategy"]
-    D --> E[Normalize:<br/>strip fences, trim, refuse empty]
-    E --> F[Preview panel:<br/>original / enhanced]
-    F -- Apply --> G["setDraft(enhanced)<br/>original pushed to undo stack"]
-    F -- Cancel / Copy --> H[Draft untouched]
-    G --> U[Undo bar: one click restores]
+    A[输入框草稿] --> B{本地守卫<br/>空 / 超长 / 命令块 / 占用}
+    B -- 通过 --> C["POST /prompt-enhance/enhance<br/>(仅回环的宿主路由)"]
+    B -- 拒绝 --> P[预览面板:<br/>可读错误,草稿不动]
+    C --> D["ctx.llm.stream<br/>按内置策略重写"]
+    D --> E[规范化:<br/>剥围栏 / 去空白 / 拒空]
+    E --> F[预览面板:<br/>原文 / 增强结果]
+    F -- 回填 --> G["setDraft(增强文本)<br/>原文压入撤销栈"]
+    F -- 取消 / 复制 --> H[草稿不动]
+    G --> U[撤销条:一键恢复]
 ```
 
-The plugin is one npm package with two halves, following the dsh plugin conventions:
+插件是单个 npm 包、双半区结构,完全遵循 dsh 插件规范:
 
-- **Host half** (`exports "."`, Node): registers the `prompt-enhance` settings section (schemastery — rendered automatically by the built-in plugin config page), the `POST /prompt-enhance/enhance` route on the shared webserver (loopback-fenced, body-capped), and the `/enhance` slash command. The model call goes through `ctx.llm.stream` with a normalized output pass — the same auxiliary-call discipline the harness applies to session titles: deadline + caller cancellation rechecked during and after the stream, terminal-finish validation, tool-call rejection.
-- **Browser half** (`exports "./client"`): registers the enhance button into the `conversation.input.right` slot and the undo bar into `conversation.input.dock`, binds a live mirror of the settings namespace, and installs the global shortcut. All copy is localized (zh/en) through the harness locale system.
+- **宿主半区**(`exports "."`,Node):导出 `prompt-enhance` 设置 schema(schemastery,全部字段 `.volatile()`,这是宿主能渲染出表单的前提)、共享 webserver 上的 `POST /prompt-enhance/enhance` 路由(仅回环、限长),以及 `/enhance` 斜杠命令。模型调用走 `ctx.llm.stream` 并做规范化处理——与 harness 对会话标题相同的辅助调用纪律:超时与调用方取消在流过程中和结束后复查、终结 finish 校验、拒绝工具调用。
+- **浏览器半区**(`exports "./client"`):把增强按钮注册进 `conversation.input.right` 插槽、撤销条注册进 `conversation.input.dock` 插槽,绑定设置命名空间的实时镜像,并安装全局快捷键。全部文案经 harness locale 系统提供中英双语。
 
-## Requirements
+## 环境要求
 
-- `dsh >= 0.1.7-rc.1` — the floor the code actually needs, not a preference. The
-  schema is built with `@deepseek-ai/schemastery`'s `.volatile()`, which the public
-  `schemastery` package does not ship, and the schema is constructed at module
-  load: on an earlier harness the import throws before anything can run. (Earlier
-  releases declared `>=0.1.1-rc.2`; that claim was stale.)
-- **Validated on `0.1.7-rc.2`**, on a real host: plugin activation, a live HTTP
-  enhancement request, a GUI `/enhance` execution, and the Settings page reading
-  and persisting configuration. The API drift this fork fixes was first read off a
-  live `0.1.7-rc.1` host.
-- Node `^22.19.0 || >=24.0.0` (for building from source)
+- `dsh >= 0.1.7-rc.1` —— 这是代码**实际需要**的下限,不是偏好。schema 用 `@deepseek-ai/schemastery` 的 `.volatile()` 构建,公共 `schemastery` 包并不提供该 API,而 schema 在**模块加载时**就构造:在更早的宿主上 import 即抛错,任何逻辑都来不及运行。(更早的版本声明过 `>=0.1.1-rc.2`,那个声明是过时的。)
+- **已在 `0.1.7-rc.2` 的真实宿主上验证**:插件激活、真实 HTTP 增强请求、GUI 中 `/enhance` 执行、设置页读取并持久化配置。本分支修复的 API 漂移最早是从运行中的 `0.1.7-rc.1` 宿主读出。
+- Node `^22.19.0 || >=24.0.0`(仅从源码构建时需要)
 
 | | |
 |---|---|
 | dsh | `>= 0.1.7-rc.1` |
 | Node | `^22.19.0 \|\| >=24.0.0` |
-| Plugin | `0.1.x` |
+| 插件 | `0.1.x` |
 
-## Install
+## 安装
 
-From this fork (recommended — the built `lib/` is committed, so nothing is built locally):
+从本 Fork 安装(推荐——构建产物 `lib/` 已随仓库提交,安装无需本地构建):
 
 ```bash
 dsh plugin --profile web add github:ZiYuan258/dsh-prompt-enhance
-# restart dsh web
+# 重启 dsh web
 ```
 
-From npm — this installs the **upstream** release (`0.2.1`), which does not carry
-this fork's DSH 0.1.7 fixes. Use it only if you are deliberately tracking upstream:
+从 npm 安装——那装到的是**上游版**(`0.2.1`),**不含**本 Fork 的 DSH 0.1.7 修复。只有你确实想跟上游时才用它:
 
 ```bash
 dsh plugin --profile web add dsh-prompt-enhance
-# restart dsh web
+# 重启 dsh web
 ```
 
-From a local checkout (for development — changes rebuild + restart take effect):
+从本地检出(开发用,改代码重建 + 重启即生效):
 
 ```bash
 git clone https://github.com/ZiYuan258/dsh-prompt-enhance.git
@@ -143,222 +113,221 @@ cd dsh-prompt-enhance && npm install && npm run build
 dsh plugin --profile web add link:C:\path\to\dsh-prompt-enhance
 ```
 
-Uninstall:
+卸载:
 
 ```bash
 dsh plugin --profile web remove dsh-prompt-enhance
-# check the profile's package.json `dsh.profile.bundles` array for a leftover
-# "dsh-prompt-enhance" row and remove it if present, then restart dsh web
+# 检查 profile 的 package.json 中 `dsh.profile.bundles` 数组是否残留
+# "dsh-prompt-enhance" 行,有则手动删除,然后重启 dsh web
 ```
 
-## Usage
+## 使用方法
 
-**Composer button / shortcut** — type (or leave) a draft, hit ✨ or `Ctrl+Alt+E`:
+**输入框按钮 / 快捷键** —— 输入(或留着)草稿,点 ✨ 或按 `Ctrl+Alt+E`:
 
-1. Local guards run first: empty drafts, over-length drafts (never auto-truncated — that would change your meaning), images-only drafts, and drafts containing command or file-reference chips are refused with a clear message. Chips are rejected because filling back would destroy them.
-2. The preview panel opens with a cancellable spinner. Your draft stays untouched — the hint says so.
-3. The result phase shows both texts side by side. **Apply** fills the enhanced text back and raises the undo bar; **Copy** puts it on the clipboard; **Cancel** (or `Esc`, or clicking the overlay) discards everything.
-4. The undo bar sits above the composer: one click restores the original. If you keep typing after applying, the bar quietly retires itself so stale text can never overwrite newer edits. Undo entries live **only in the current page's memory** (up to 3 per session) — a page reload, a web restart, or a session switch clears them.
+1. 先跑本地守卫:空草稿、超长草稿(**不自动截断**——截断会改变原意)、仅图片草稿、含命令或文件引用块的草稿,都会被拒绝并给出明确提示。引用块被拒是因为回填会破坏它们。
+2. 预览面板打开,显示可取消的加载动画。此时草稿原封不动——面板上写明了这一点。
+3. 结果阶段左右并排展示两份文本。**回填**把增强文本写回输入框并升起撤销条;**复制**进剪贴板;**取消**(`Esc` 或点击遮罩)丢弃一切。
+4. 撤销条停在输入框上方:一键恢复原文。回填后你继续输入,撤销条会安静地自我退位——过期的原文永远不会覆盖你更新的编辑。撤销记录**只存在于当前页面内存**(每个会话最多 3 条),刷新页面、重启 Web 或切换会话后即失效。
 
-**`/enhance <text>`** — rewrite any text from the slash menu. The result renders in the command plane (copyable) and never enters the conversation history or the model's context. To enhance the *composer draft itself*, use the button or shortcut — the draft lives in the browser. Cancelling a running `/enhance` follows the harness command plane; if the client offers no cancel affordance, the call simply runs to completion or times out.
+**`/enhance <文本>`** —— 从斜杠菜单改写任意文本。结果在命令面板渲染(可复制),不进入会话历史与模型上下文。要增强**输入框里的草稿**请用按钮或快捷键——草稿在浏览器里。正在运行的 `/enhance` 取消跟随 harness 命令面板能力;客户端未提供取消入口时,调用会执行到完成或超时。
 
-**Language consistency**: the strategy instructs the model to mirror the input language (Chinese in → Chinese out). This is a best-effort instruction, not a hard guarantee.
+**语言一致性**:重写策略默认要求模型保持输入语言(中文进中文出)——尽力而为的约束,无法严格保证。
 
-## Configuration
+## 配置
 
-Everything lives in the `prompt-enhance` settings namespace, edited from this plugin's own **Prompt enhance** page in **Settings**. Changes apply to the very next call — no restart. Every enhancement is one billable LLM call: `maxOutputTokens` bounds its cost, and the host-side concurrency/rate caps bound how often calls can be made.
+全部配置位于 `prompt-enhance` 设置命名空间,在 **设置** 里本插件自己的 **提示词增强** 页编辑。改动作用于下一次调用——无需重启。每次增强都是一次计费的 LLM 调用——`maxOutputTokens` 约束单次成本,并发/限流字段约束调用频率。
 
-| Field | Default | Description |
+| 字段 | 默认 | 说明 |
 |---|---|---|
-| `enabled` | `true` | Master switch; off hides the button and disables every trigger |
-| `provider` + `model` | empty | Explicit route override; must be filled as a **pair** (or both empty to follow the current session model) |
-| `temperature` | `0.3` | Low temperature keeps the rewrite faithful to the original |
-| `reasoningEffort` | `off` | Reasoning budget forwarded to the rewrite: `off`, `low`, `high`, or `inherit` (send no field and take the model's own default). A rewrite is short and well-specified, so deep reasoning buys nothing but costs a lot — measured on `deepseek-flash` for one ordinary draft: `off` used **252** output tokens and returned 439 characters, `low` used 619, `high` (the route default) used **2897** for 979 characters. Set `inherit` only if the route rejects an explicit effort |
-| `maxOutputTokens` | `8192` | Output token budget of one enhancement call. Reasoning is billed against this same budget and runs **before** any visible text, so a low cap can be consumed by reasoning alone and finish with zero text — the original `2048` did exactly that on ordinary drafts |
-| `maxInputChars` | `12000` | Input character cap (counted in Unicode code points — an emoji is one character); over-limit drafts are **rejected, never truncated** |
-| `timeoutMs` | `60000` | End-to-end deadline of one call |
-| `systemPrompt` | built-in strategy | Custom strategy text; how it combines with the built-in strategy is set by `strategyMode` |
-| `strategyMode` | `replace-default` | How a custom strategy combines with the built-in one: `replace-default` **swaps it out entirely** (backward compatible, but the built-in hard rules — preserve intent, never fabricate, body-only output, language mirroring — are not retained and must be carried into your own text); `extend-default` **appends your text after the built-in strategy**, keeping those rules in force |
-| `shortcut` | `ctrl+alt+e` | Global shortcut spec (at least one modifier + one alphanumeric/function key — bare keys are ignored so normal typing can never be swallowed); empty disables it |
-| `maxConcurrent` | `2` | Concurrency cap **within a single host process**; extra requests answer `429` (`concurrency-limit`). The browser UI admits exactly one in-flight request (a single preview panel), so this cap mainly protects the `/enhance` command plane and multi-client callers |
-| `rateLimitPerMinute` | `10` | Sliding-window rate cap per minute, **within a single host process**, counting **successful calls only** — failures (timeout / upstream error / cancellation) never consume the window, so a run of failures cannot rate-limit you out; extra requests answer `429` (`rate-limit`) with a `Retry-After` in seconds |
-| `streaming` | `true` | Show the model's output as it streams instead of waiting for the whole rewrite — **display-only**, the final text is still the normalized full result, and the client transparently falls back to the one-shot JSON route when the host or network does not support `text/event-stream` |
-| `contextAware` | `true` | Read the current conversation's recent history and use it to ground the rewrite (resolve pronouns, fill in stated constraints, mirror the established stack and terminology). With no session, no history, or this switch off, the call degrades to the original single-prompt enhancement — context is an optimization, never a prerequisite. **Privacy:** the assembled history snippet is sent to the configured LLM alongside the draft — if the conversation contains secrets, tokens, or other sensitive content, switch `contextAware` off (or scope the conversation before enhancing). |
-| `contextMaxMessages` | `8` | Context window breadth — how many recent `user`/`assistant` turns may ground the rewrite; `0` admits none |
-| `contextMaxChars` | `4000` | Context window depth — character budget of the assembled history snippet, spent newest-first so the most recent turns win when the budget is tight; `0` admits none |
-| `provider` + `model` values | — | Match the harness settings: each key under `llm-pi-ai.providers` (e.g. `zhipu`, `muyuu`) is a provider and each `models[].id` under it (e.g. `glm-5.3-flash`) is a model. Example pair: `provider: zhipu` + `model: glm-5.3-flash` |
+| `enabled` | `true` | 总开关;关闭隐藏按钮并停用所有触发方式 |
+| `provider` + `model` | 空 | 显式路由覆盖;必须**成对**填写(或都留空以跟随当前会话模型) |
+| `temperature` | `0.3` | 低温使改写更忠实于原意 |
+| `reasoningEffort` | `off` | 转发给改写调用的推理预算:`off` / `low` / `high` / `inherit`(不传该字段,跟随模型自身默认档)。改写是短而明确的任务,深度思考几乎没有收益、成本却很高——在 `deepseek-flash` 上对同一句话实测:`off` 用 **252** 输出 token、产出 439 字符;`low` 用 619;`high`(模型默认档)用 **2897** 才 979 字符。只有在该路由拒绝显式档位时才改 `inherit` |
+| `maxOutputTokens` | `8192` | 单次增强调用的输出 token 预算。推理与正文**共用**这份预算且推理在前,上限偏低时可能被思考全部吃掉、最终只有思考没有正文——原来的 `2048` 正是如此 |
+| `maxInputChars` | `12000` | 输入字符数上限(按 Unicode 字符统计,不是 token 数;一个 emoji 算一个字符);超限**拒绝而不截断** |
+| `timeoutMs` | `60000` | 单次调用的端到端超时 |
+| `systemPrompt` | 内置策略 | 自定义增强策略文本;与内置策略如何组合见 `strategyMode` |
+| `strategyMode` | `replace-default` | 自定义策略的组合方式:`replace-default` **整体替换**内置策略(向后兼容,但「不改变原意、不编造、只输出正文、镜像输入语言」等硬性约束不会自动保留,需自行写入);`extend-default` 把自定义文本**追加在内置策略之后**,硬性约束继续生效 |
+| `shortcut` | `ctrl+alt+e` | 快捷键规格(至少一个修饰键 + 单个字母/数字/功能键——纯裸键会被忽略,绝不会吞掉正常打字);留空禁用 |
+| `maxConcurrent` | `2` | **单个 Host 进程内**的并发上限;超出的请求返回 `429`(`concurrency-limit`)。浏览器 UI 因单预览面板天然只允许 1 个在途请求,此上限主要保护 `/enhance` 命令入口与多客户端调用 |
+| `rateLimitPerMinute` | `10` | **单个 Host 进程内**的每分钟滑动窗口限流,只统计**成功完成**的增强——失败(超时 / 上游错误 / 取消)不消耗窗口,连续失败不会把自己限流;超出的请求返回 `429`(`rate-limit`),响应附 `Retry-After` 秒数 |
+| `streaming` | `true` | 模型边写边在面板展示,而非等整段写完——**仅影响显示节奏**,最终文本仍是归一化的完整结果;宿主或网络不支持 `text/event-stream` 时客户端会自动回退为一次性 JSON 请求 |
+| `contextAware` | `true` | 读取当前对话的近期历史,用于消解代词、补全已声明的约束、镜像已确立的栈与术语。无会话、无历史、或关闭此开关时,自动回退为单条增强——上下文是优化、不是前置条件。**隐私:** 装配好的历史片段会随草稿一起发给当前配置的 LLM;若当前会话含密钥、token、内部代号等敏感内容,请关闭 `contextAware`(或先结束该会话再开新会话增强) |
+| `contextMaxMessages` | `8` | 上下文窗口广度——最多参考多少条 user/assistant 轮;`0` 表示不参考 |
+| `contextMaxChars` | `4000` | 上下文窗口深度——历史片段的字符预算,从最新一条起向前装配;`0` 表示不参考 |
+| `provider` + `model` 取值 | — | 与 harness 设置一致:设置文件 `llm-pi-ai.providers` 下的键就是 provider(如 `zhipu`、`muyuu`),其 `models[].id` 就是 model(如 `glm-5.3-flash`)。示例:`provider: zhipu` + `model: glm-5.3-flash` |
 
-**Model routing precedence:** explicit settings pair → the route recorded in the current session's request header → the harness-wide default model (`agent-default-model`). If none of them names a route (e.g. a fresh session with no default model), the plugin fails with an actionable message instead of guessing.
+**模型路由优先级:** 设置成对覆盖 → 当前会话请求头中记录的路由 → 全局默认模型(`agent-default-model`)。三者都指不出路由时(例如全新会话且无默认模型),插件给出可操作的报错而不是乱猜。
 
-## The built-in enhancement strategy
+## 内置增强策略
 
-The default system prompt instructs the model to be a prompt-rewriting expert and to apply what the draft actually needs:
+默认系统提示词让模型扮演提示词重写专家,按草稿的实际需要施加:
 
-1. **Role and goal** — state who the assistant acts as and what the deliverable is.
-2. **Context and constraints** — add only what the draft implies; never invent facts, data, names, or requirements.
-3. **Steps** — break vague or multi-part requests into numbered, executable steps.
-4. **Output format** — specify structure, language, length, and style where implied.
-5. **Acceptance criteria** — state how to recognize a correct result.
-6. **Boundary conditions** — list edge cases and what to do when information is missing.
+1. **角色与目标** —— 写明助手扮演谁、交付物是什么。
+2. **背景与约束** —— 只补全草稿可推断的信息;绝不编造事实、数据、名称或需求。
+3. **步骤** —— 把模糊或多头需求拆成编号、可执行的步骤。
+4. **输出格式** —— 在有暗示处指明结构、语言、长度与风格。
+5. **验收标准** —— 写明怎样判断结果正确。
+6. **边界条件** —— 列出边界情况与信息缺失时的做法。
 
-Hard rules: preserve intent exactly (never remove, alter, or contradict user information); never fabricate — insert an explicit placeholder like `(待补充：…)` / `(TBD: …)` for unknown details; keep the scope unchanged; output **only** the rewritten body (no explanations, fences, or pleasantries); mirror the input language; stay within roughly 1–3× the original length; lightly polish already-well-formed prompts instead of inflating them.
+硬性规则:精确保留原意(不删除、不篡改、不与用户信息冲突);绝不编造——未知细节插入显式占位符如 `(待补充:…)` / `(TBD: …)`;保持任务范围不变;**只输出**改写后的正文(无解释、无围栏、无客套);镜像输入语言;长度约为原文 1–3 倍;已经成形的提示词只做轻度润色而不注水。
 
-Set `systemPrompt` in the settings to use your own strategy; `strategyMode` decides how it combines. The default `replace-default` is a **complete replacement** — the built-in safety constraints (preserve intent, never fabricate, body-only output, mirror the input language, treat the framed draft as data) are not retained automatically, so your own strategy must include them. Switching to `extend-default` appends your text after the built-in strategy instead, keeping those rules in force.
+在设置中填写 `systemPrompt` 即可自定义策略,组合方式由 `strategyMode` 决定:默认 `replace-default` 是**完全替换**——内置策略中的安全约束(不改变原意、不编造、只输出正文、镜像输入语言、原文视为纯数据)不会自动保留,自定义策略需要自行包含这些约束;改为 `extend-default` 则把你的文本追加在内置策略之后,硬性约束继续生效。
 
-## Error handling & edge cases
+## 异常与边界
 
-| Case | Behavior |
+| 情形 | 行为 |
 |---|---|
-| Empty / whitespace / invisible-only draft | Local refusal: "input box is empty" |
-| Draft over `maxInputChars` | Rejected locally and at the route with exact counts; **no auto-truncation** |
-| Images attached but no text | Refused: text-only feature |
-| Command or file-reference chips in the draft | Refused: fill-back would destroy the chips |
-| Submitting / busy phase or a request already in flight | Refused with "try again in a moment" |
-| Per-minute cap exceeded | `429` (`rate-limit`) with a `Retry-After` in seconds; the host message names the exact wait. The window counts successful calls only — failures do not consume it |
-| Concurrency cap full | `429` (`concurrency-limit`), no `Retry-After` — a slot frees whenever an in-flight call settles |
-| Upstream model failure | Stable codes mapped to readable hints: `AUTH` → check API key, `RATE_LIMIT` → retry later, `QUOTA_EXCEEDED` → check balance, `CONTEXT_WINDOW_EXCEEDED` → shorten input, `NO_ADAPTER`/unconfigured → configure a model |
-| Output reaches `maxOutputTokens` | Refused with a hint to raise the cap or shorten the draft |
-| Model returns empty / fence-wrapped / tool-call output | Normalized (fences stripped) or refused; retryable |
-| Timeout | `504`-mapped message with the configured seconds; retryable |
-| Browser tab closed mid-flight | The host route detects the disconnect and aborts the model call |
-| Session switch | Panel state, undo stack, and shortcut targeting are per-session; switching closes the panel and clears its undo entries |
+| 空 / 纯空白 / 零宽字符草稿 | 本地拒绝:「输入框为空」 |
+| 草稿超过 `maxInputChars` | 本地与路由双重拒绝并给出精确字符数;**不自动截断** |
+| 只附加了图片没有文本 | 拒绝:仅支持文本 |
+| 草稿含命令 / 文件引用块 | 拒绝:回填会破坏引用块 |
+| 提交中 / 占用阶段 / 已有请求在途 | 拒绝并提示「稍后再试」 |
+| 每分钟次数超限 | `429`（`rate-limit`），响应携带 `Retry-After` 秒数，宿主消息给出精确等待时长;窗口只统计成功完成的调用——失败不消耗窗口 |
+| 并发已满 | `429`（`concurrency-limit`），无 `Retry-After`——空出的时机不可预测，等一个在途调用结束即可 |
+| 上游模型失败 | 稳定错误码映射为可读提示:`AUTH` → 检查 API Key、`RATE_LIMIT` → 稍后重试、`QUOTA_EXCEEDED` → 检查余额、`CONTEXT_WINDOW_EXCEEDED` → 精简输入、`NO_ADAPTER`/未配置 → 先配置模型 |
+| 输出达到 `maxOutputTokens` | 拒绝并提示调大上限或精简原文 |
+| 模型返回空 / 围栏包裹 / 工具调用 | 规范化(剥围栏)或拒绝;可重试 |
+| 超时 | 映射为 `504` 的提示并给出配置秒数;可重试 |
+| 浏览器中途关闭 | 宿主路由侦测连接断开,立即中止模型调用 |
+| 切换会话 | 面板状态、撤销栈、快捷键目标均按会话隔离;切换即关闭面板并清理撤销记录 |
 
-Every failure surfaces inside the plugin's own panel; the composer draft is never modified by a failed call, so manual input continues undisturbed.
+所有失败只出现在插件自己的面板里;失败的调用绝不修改输入框草稿,手动输入不受任何干扰。
 
-## Error codes & localization
+## 错误码与本地化
 
-The host route answers structured errors of the shape `{ code, message?, params? }`: the browser renders its localized primary line from `code` + `params` using the current language dictionary, and `message` — when present — is an optional diagnostic detail (the provider's raw failure text, a config error) shown verbatim beneath the primary line. The `/enhance` command plane has no locale dictionary; a host-side renderer of the same errors produces the Chinese text directly.
+宿主路由返回的结构化错误形如 `{ code, message?, params? }`:主文案由浏览器按 `code` + `params` 从当前语言字典渲染,`message` 只是可选的诊断细节(如模型服务商的原始报错、配置错误原文),原样展示在主文案下方。`/enhance` 命令平面没有 locale 字典,由宿主侧的同源渲染函数直接产出中文文本。
 
-| Error code | HTTP status | Browser primary copy (dictionary key) | Params |
+| 错误码 | HTTP 状态 | 浏览器主文案(字典键) | 参数 |
 |---|---|---|---|
-| `rejected` | 403 / 413 / 415 / 422 | generic `error.rejected`; with `{ count, max }` it reuses `error.tooLong` | over-length input: `{ count, max }` |
+| `rejected` | 403 / 413 / 415 / 422 | `error.rejected` 通用;携带 `{ count, max }` 时复用 `error.tooLong` | 超长输入: `{ count, max }` |
 | `rate-limit` | 429 | `error.rateLimit` | `{ limit, retryAfterSeconds }` |
 | `concurrency-limit` | 429 | `error.concurrencyLimit` | `{ max }` |
 | `timeout` | 504 | `error.timeout` | `{ seconds }` |
 | `unconfigured` | 409 | `error.unconfigured` | — |
-| `upstream` | 502 | generic `error.upstream`; with `reason` it uses `error.upstream.{reason}` (`auth` / `invalidCredential` / `rateLimit` / `quota` / `empty` / `contextWindow` / `toolCall` / `maxTokens`) | `{ reason }` |
+| `upstream` | 502 | `error.upstream` 通用;携带 `reason` 时用 `error.upstream.{reason}`(如 `auth` / `quota` / `rateLimit` / `empty` / `contextWindow` / `toolCall` / `maxTokens` / `invalidCredential`) | `{ reason }` |
 | `internal` | 500 / 502 | `error.internal` | — |
 
-## Troubleshooting
+## 故障排查
 
-**Button missing / shortcut dead**
-Settings → **Prompt enhance**: is `enabled` true? Is the plugin installed (`dsh plugin --profile web list`) and `dsh web` restarted? Any apply error in the browser console?
+**按钮不出现 / 快捷键无响应**
+设置 → **提示词增强** 里的 `enabled` 是否为 `true`;插件是否成功安装(`dsh plugin --profile web list`)并重启了 `dsh web`;浏览器控制台是否有插件应用报错。
 
-**"No model resolved for the enhancement"**
-Routing follows settings pair → session model → harness default; if all three are empty there is nothing to call. Pair `provider`/`model` in the settings, or send a message in the current session first so it carries a model route. Check the `agent-default-model` settings section.
+**「尚未确定增强用的模型」**
+插件遵循设置成对覆盖 → 当前会话模型 → 全局默认模型的路由优先级,三者都为空时无法调用。在设置中成对填写 `provider`/`model`,或先在当前会话发一条消息让会话带上模型路由。检查 `agent-default-model` 设置节是否配置。
 
-**Authentication failures**
-The `message` detail line carries the concrete cause (e.g. 401). Check the provider's API key in the harness credential store; quota/balance problems surface as the `quota` hint.
+**「鉴权失败」**
+`message` 细节行会带出具体原因(如 401)。检查对应 provider 在 harness 凭据存储中的 API Key;配额/余额问题对应 `quota` 提示。
 
-**Rate-limited (429) right after a run of failures**
-Should not happen — the window counts successes only. If it still does, check whether several profiles/processes are mounted (each counts independently and stacks up) or whether `rateLimitPerMinute` is set too low.
+**连续失败后立刻被限流(429)**
+不应发生——限流窗口只统计成功调用,失败不消耗窗口。若仍遇到,确认同时挂载了多个 profile / 多进程(各自独立计数会叠加),或 `rateLimitPerMinute` 配置过低。
 
-**Poor rewrites (fabrication, dropped requirements, broken formatting)**
-With `strategyMode` set to `replace-default`, a custom `systemPrompt` replaces the built-in strategy entirely — its hard rules (never fabricate, body-only output, mirror the input language) are not retained automatically; carry them into your own text or switch to `extend-default`.
+**结果不理想(编造、丢要求、格式乱)**
+`strategyMode` 为 `replace-default` 时自定义 `systemPrompt` 会整体替换内置策略——内置的「不编造、只输出正文、镜像输入语言」等硬性约束不会自动保留,请自行写入;或改用 `extend-default`。
 
-**Behavior changed after upgrading**
-Since 0.1.6 the host no longer sends Chinese primary-line copy: the browser localizes errors by code (`message` is now only a diagnostic detail), and the `rate-limit` window counts successful calls only. No configuration change needed.
+**升级后行为变了**
+0.1.6 起宿主错误不再携带中文主文案,浏览器端按错误码本地化渲染(非中文界面不再混入中文);`rate-limit` 窗口改为只统计成功调用。升级后无需改配置。
 
-## Security model
+## 安全模型
 
-The enhance route is served by your own dsh host and reachable **only from this machine**:
+增强路由由你自己的 dsh 宿主提供服务,**仅限本机访问**:
 
-- **Socket fence** — requests from non-loopback addresses are refused (`127.0.0.1` / `::1` only). Note this means *any local process* can call the route; it carries no user authentication.
-- **Host allowlist** — the route also validates the `Host` header against `localhost` / `127.0.0.1` / `[::1]`, which defeats DNS-rebinding (a rebound attacker domain keeps the loopback socket address but carries the attacker's hostname and is refused). Responses are `cache-control: no-store`.
-- **Abuse caps** — an `Origin` gate refuses browser calls from non-local pages, and the route enforces a concurrency cap (`maxConcurrent`, default 2) and a per-minute rate limit (`rateLimitPerMinute`, default 10), answering `429` beyond either. Both counters live **in a single host process's memory**: multiple processes, a cluster, or several profiles mounting the plugin each count independently, so the global cap would be exceeded — this plugin supports single-process deployments only and ships no shared rate-limit store.
-- **Proxy rejection** — requests carrying `X-Forwarded-For` / `Forwarded` headers are refused outright: those headers only exist when a proxy is in the path, which the trust model does not cover.
-- **Request-level timeouts are the host's and Node's job** — the plugin bounds the body size (including a Content-Length fast reject) and the per-call `timeoutMs`; connection-level timeouts (headers / request timeout / keep-alive) are server-level settings on the shared `http.Server` that a prefix route must not touch, so they fall to the host and Node's defaults (60 s headers / 300 s request).
-- **Not for reverse-proxy exposure** — if you put dsh web behind a proxy that listens on the LAN, external callers appear as loopback to the route and the fence is moot. Do not expose a proxied host without adding your own authentication at the proxy.
-- **Prompt-injection boundary** — the draft is framed between `<raw_prompt>` tags, literal closing tags inside the draft are neutralized, and the strategy prompt treats the framed text as pure data. This lowers the risk of simple tag-escape; prompt-based boundaries are best-effort, not a guarantee. Enhancements run with your own credentials and the result is only ever shown back to you.
-- **Conversation-context data sharing** — when `contextAware` is on (default), the plugin assembles the recent `user`/`assistant` history of the current session (capped by `contextMaxMessages` / `contextMaxChars`) and sends it to the configured LLM alongside the draft. That history may carry secrets the user typed earlier in the session — API keys, tokens, internal hostnames, customer names — which the LLM provider will see verbatim. Treat the switch as the privacy boundary: turn it off (or end the session and start a fresh one before enhancing) when the conversation should not leave the machine. The hard rules on context use in the strategy prompt forbid introducing facts the raw prompt does not support, but they cannot un-share what has already been sent.
+- **套接字栅栏** —— 非回环地址(`127.0.0.1` / `::1` 之外)的请求一律拒绝。注意这意味着*本机任意进程*都可以调用该路由;路由本身不带用户鉴权。
+- **Host 白名单** —— 路由同时校验 `Host` 头是否为 `localhost` / `127.0.0.1` / `[::1]`,可防御 DNS 重绑定(重绑定的攻击者域名虽然落在回环套接字上,但携带的是攻击者主机名,会被拒绝)。响应均为 `cache-control: no-store`。
+- **滥用上限** —— `Origin` 门拒绝来自非本地页面的浏览器调用;路由还执行并发上限(`maxConcurrent`,默认 2)与每分钟限流(`rateLimitPerMinute`,默认 10),超限返回 `429`。这两项计数保存在**单个宿主进程的内存中**——多进程、cluster 或多个 profile 同时挂载时各自独立计数,全局上限会被突破;本插件只支持单进程部署,也不提供共享限流存储。
+- **代理请求拒绝** —— 携带 `X-Forwarded-For` / `Forwarded` 头的请求直接拒绝:这些头只会在链路上存在代理时出现,而代理场景不在本路由的信任模型内。
+- **请求级超时由宿主与 Node 兜底** —— 插件层只限制 body 字节数(含 Content-Length 快速拒绝)与单次模型调用的 `timeoutMs`;连接级超时(headers timeout / request timeout / keep-alive)是共享 `http.Server` 的 server 级配置,插件不覆盖,由宿主与 Node 默认值(headers 60 秒 / request 300 秒)兜底。
+- **不要经反向代理暴露** —— 若把 dsh web 放在监听局域网的代理后面,外部调用者在路由看来就是回环地址,栅栏形同虚设。除非在代理层自行加鉴权,否则不要暴露。
+- **提示注入边界** —— 草稿被框在 `<raw_prompt>` 标签之间,草稿内的字面闭合标签会被中和,策略提示词把框内文本视为纯数据——降低简单标签逃逸的风险;基于提示词的边界是尽力而为,并非完整防护。增强只使用你自己的凭据,结果也只回显给你本人。
+- **会话上下文数据外发** —— `contextAware` 默认开启时,本插件会装配当前会话近期的 `user`/`assistant` 历史(条数与字符数受 `contextMaxMessages` / `contextMaxChars` 限制),随草稿一起发给当前配置的 LLM。该历史可能携带你之前在会话里输入过的密钥、token、内网主机名、客户名称等,模型提供方会**原文看到**。把 `contextAware` 视为隐私边界:不该外发的会话先关闭该开关,或结束会话、开新会话再增强。策略提示词里关于上下文的硬性约束可以禁止模型「基于上下文凭空加东西」,但**无法撤回已经发出去的内容**。
 
-## Architecture
+## 架构
 
 ```
 src/
-├── index.ts            host apply(): settings section + route + command
-├── config.ts           schemastery schema + resolution (paired route validation)
-├── prompts.ts          built-in strategy system prompt + <raw_prompt> framing
-├── enhancer.ts         the ctx.llm auxiliary call (route resolution, deadline
-│                       racing, finish validation, structured errors + host render)
-├── enhance-routes.ts   POST /prompt-enhance/enhance (loopback fence, body cap)
-├── enhance-command.ts  /enhance slash command (host command registry)
-├── loopback.ts         127.0.0.1/::1 fence for the route
-├── http.ts             bounded JSON body reader / writer
-├── shared/             wire protocol types, input checks, output normalization
-│                       (imported by both halves)
-└── client/             browser half
-    ├── index.tsx       slots registration + settings mirror + shortcut listener
-    ├── EnhanceButton   conversation.input.right entry: guards + call orchestration
-    ├── ResultPanel     overlay panel: compare / apply / copy / cancel / retry
-    ├── UndoBar         conversation.input.dock entry: restore affordance
-    ├── ui-state.ts     external store shared by components (panel, undo, sessions)
-    ├── enhance-client  fetch client with abort + typed errors
-    ├── undo-stack.ts   per-session LIFO (depth 3, global cap 60, LRU eviction)
-    ├── shortcut.ts     pure combo parsing / matching
-    ├── settings.ts     client mirror of the settings namespace
-    ├── locales.ts      zh + en dictionaries (harness locale namespace)
-    └── styles.ts       self-injected stylesheet (dsh-pe- prefixed classes)
+├── index.ts            宿主 apply():设置节 + 路由 + 命令
+├── config.ts           schemastery 模式 + 解析校验(成对路由)
+├── prompts.ts          内置策略系统提示词 + <raw_prompt> 框架
+├── enhancer.ts         ctx.llm 辅助调用(路由解析、超时竞速、finish 校验、
+│                       结构化错误 code+params + 宿主侧渲染)
+├── enhance-routes.ts   POST /prompt-enhance/enhance(回环栅栏、限长)
+├── enhance-command.ts  /enhance 斜杠命令(宿主命令注册表)
+├── loopback.ts         路由的 127.0.0.1/::1 栅栏
+├── http.ts             限长 JSON body 读取 / 写出
+├── shared/             传输协议类型、输入校验、输出规范化(两端共用)
+└── client/             浏览器半区
+    ├── index.tsx       插槽注册 + 设置镜像 + 快捷键监听
+    ├── EnhanceButton   conversation.input.right 条目:守卫链 + 调用编排
+    ├── ResultPanel     浮层面板:对比 / 回填 / 复制 / 取消 / 重试
+    ├── UndoBar         conversation.input.dock 条目:恢复入口
+    ├── ui-state.ts     组件共享的外部 store(面板、撤销、会话注册表)
+    ├── enhance-client  fetch 客户端(可中止 + 类型化错误)
+    ├── undo-stack.ts   按会话的 LIFO 栈(每会话深度 3,全局 60 条,LRU 淘汰)
+    ├── shortcut.ts     纯函数的组合键解析 / 匹配
+    ├── settings.ts     设置命名空间的客户端镜像
+    ├── locales.ts      中英文字典(harness locale 命名空间)
+    └── styles.ts       自注入样式表(dsh-pe- 前缀类名)
 ```
 
-Build outputs: `lib/index.js` (host half, ESM, package imports kept external) and `lib/client.js` (browser half bundled to CJS inside the `window.__ModuleLoader__.load({ id, factory })` envelope the dsh web shell expects). Both are committed so GitHub installs need no build step; CI fails if `lib/` drifts from `src/`.
+构建产物:`lib/index.js`(宿主半区,ESM,包引用保持外部)与 `lib/client.js`(浏览器半区,打包为 CJS 并包进 dsh web 壳要求的 `window.__ModuleLoader__.load({ id, factory })` 信封)。两者都随仓库提交,因此 GitHub 直装无需构建;CI 会在 `lib/` 与 `src/` 不一致时拒绝合并。
 
-## Development
+## 开发
 
-Daily debug loop (link install + watch): install once via `dsh plugin --profile web add link:...`, run `npm run watch`, and restart `dsh web` after host-half changes — see [CONTRIBUTING.md](./CONTRIBUTING.md).
+日常调试闭环(link 安装 + watch):先用 `dsh plugin --profile web add link:...` 装一次,再挂 `npm run watch`;宿主半区改动需重启 `dsh web`——详见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 ```bash
 npm install
 npm run typecheck     # tsc --noEmit
-npm test              # unit + real-http + component suites
-npm run build         # typecheck + both halves
-npm run watch         # esbuild watch for both halves
+npm test              # 单元 + 真实 HTTP + 组件测试套件
+npm run build         # 类型检查 + 双半区构建
+npm run watch         # esbuild 监听构建双半区
 ```
 
-**Test coverage:** input validation, output normalization, the enhancer against stubbed `ctx.llm` streams, a real-`node:http` route suite (loopback Host fence, disconnect abort, error envelopes), the loopback/Host fence units, prompt framing, config resolution, the undo stack, shortcut parsing, client settings, and React component tests locking the enhance → apply → undo flow (guards, stale marking, diverged-draft undo semantics).
+**测试覆盖:** 输入校验(空 / 零宽字符 / 超长)、输出规范化(剥围栏、折行、拒空)、以桩 `ctx.llm` 流驱动的增强器(正常路径、AUTH/NO_ADAPTER/max-tokens 终结、空输出、挂起流失超时、预中止的调用方、路由优先级)、路由的真实 `node:http` 端到端套件(回环栅栏、方法守卫、畸形 body、结构化错误信封、停用开关)、撤销栈、快捷键解析与匹配、配置解析、客户端设置解码器。
 
-**Release process (maintainers):**
+**发版流程(维护者):**
 
 ```bash
-npm version patch   # or minor / major — bumps package.json and tags
-npm run build       # make lib/ match src/
+npm version patch   # 或 minor / major —— 更新 package.json 并打 tag
+npm run build       # 让 lib/ 与 src/ 一致
 git push --follow-tags
-npm publish         # with 2FA OTP, or a granular token with "bypass 2FA" checked
+npm publish         # 带 2FA OTP,或使用勾选了 "bypass 2FA" 的细粒度令牌
 ```
 
-CI runs typecheck + tests + build on every push/PR and rejects merges where `lib/` differs from the committed build.
+CI 在每次 push/PR 上运行类型检查 + 测试 + 构建,并在 `lib/` 与已提交构建不一致时拒绝合并。
 
 ## FAQ
 
-**Why is my draft rejected when it contains `/commands` or `@references`?**
-The fill-back writes plain text via `inputActions.setDraft`, which would destroy the chips. Remove them, enhance, then re-insert.
+**为什么草稿里有 `/命令` 或 `@引用` 时被拒绝?**
+回填通过 `inputActions.setDraft` 写纯文本,会破坏引用块。先移除它们,增强后再插回。
 
-**Why isn't over-length input auto-truncated?**
-Truncation silently changes your meaning — the plugin refuses and shows the exact counts instead.
+**为什么不自动截断超长输入?**
+截断会无声地改变你的原意——插件宁可拒绝并给出精确字符数。
 
-**Can I pin a specific model?**
-Fill `provider` and `model` **as a pair** in the settings (e.g. your harness-configured provider route). Leave both empty to follow the current session's model.
+**能固定用某个模型吗?**
+在设置中**成对**填写 `provider` 与 `model`(例如 harness 已配置的 provider 路由)。都留空则跟随当前会话模型。
 
-**Where does my draft go?**
-Browser → your own dsh host over a loopback-only route → the harness LLM service → the configured model provider. Nothing is sent anywhere else, and the enhancement never enters the session's model history.
+**我的草稿会被发到哪里?**
+浏览器 → 你自己的 dsh 宿主(仅回环路由)→ harness LLM 服务 → 配置的模型服务商。不会发往其他任何地方,增强行为也绝不进入会话的模型历史。
 
-**Does it work with the official DeepSeek route?**
-Yes — it rides `ctx.llm`, so any provider the harness serves (DeepSeek official, OpenAI-compatible gateways) works.
+**官方 DeepSeek 路由能用吗?**
+能——调用走 `ctx.llm`,harness 支持的所有 provider(DeepSeek 官方、OpenAI 兼容网关)都可用。
 
-## Manual smoke checklist
+## 安装后手工冒烟清单
 
-After installing and restarting `dsh web`:
+安装并重启 `dsh web` 后:
 
-1. Settings shows a **Prompt enhance** page.
-2. The ✨ button sits next to the send button; `Ctrl+Alt+E` triggers the same flow.
-3. Empty input → refusal panel; a valid draft → preview with model info; Apply fills back; Undo restores; Copy works.
-4. `/enhance <text>` renders a copyable result without touching model history.
-5. All three model routes work: pinned settings pair, a session's model, and the harness default.
+1. 设置里出现 **提示词增强** 页。
+2. 发送键旁出现 ✨ 按钮;`Ctrl+Alt+E` 触发相同流程。
+3. 空输入 → 拒绝面板;有效草稿 → 预览含模型信息;回填生效;撤销恢复;复制可用。
+4. `/enhance <文本>` 输出可复制结果,且不进入模型历史。
+5. 三种模型路由都通:设置成对覆盖、会话模型、全局默认模型。
 
-## Acknowledgments
+## 致谢
 
-Plugin structure, the loopback fence, and the settings-section pattern follow the conventions established by the dsh plugin family — in particular [`@linxin666/dsh-tool-describe-image`](https://www.npmjs.com/package/@linxin666/dsh-tool-describe-image).
+插件结构、回环栅栏与设置节模式遵循 dsh 插件家族的既有惯例——特别是 [`@linxin666/dsh-tool-describe-image`](https://www.npmjs.com/package/@linxin666/dsh-tool-describe-image)。
 
-## License
+## 许可证
 
 [Apache-2.0](./LICENSE)
