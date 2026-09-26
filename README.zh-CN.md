@@ -11,13 +11,20 @@
 >
 > 本仓库是 [`rongxingda/dsh-prompt-enhance`](https://github.com/rongxingda/dsh-prompt-enhance) 的维护分支。
 >
-> - **已在 DSH 0.1.7-rc.1 上验证**——下面的 API 漂移都是从那个版本的运行中宿主读出来并实测复现的。
-> - **已针对 DSH 0.1.7-rc.2 编译与测试**——所有 DSH devDependency 都锁定在该版本,类型检查与全套测试都跑在它的 API 面上。
->   但**尚未在 rc.2 宿主机上运行过**:那一步需要升级本机 DSH,而不是补更多单测。详见 [CHANGELOG.md](./CHANGELOG.md)。
+> **已在 DSH 0.1.7-rc.2 的真实宿主上完成验证**——不只是跑测试:
+>
+> - 插件激活、两个半边均挂载成功(`Config` schema 已投影、输入框按钮已注册进 slot 树);
+> - 真实 HTTP 增强请求返回 `200`,并由 `deepseek-flash` 实际完成改写;
+> - GUI 中 `/enhance` 命令真实执行(会话日志记录到 `command/run`,结果出现在命令平面且不进入对话历史);
+> - 设置页能读取**并持久化**配置。
+>
+> 所有 DSH devDependency 均锁定 `0.1.7-rc.2`,类型检查与全套测试同样跑在该 API 面上。下面的 API 漂移最早是从运行中的 `0.1.7-rc.1` 宿主读出;逐条证据见 [CHANGELOG.md](./CHANGELOG.md)。
+>
+> 需要宿主自带的 schemastery 构建(`@deepseek-ai/schemastery`):schema 使用了 `.volatile()`,公共 `schemastery` 包并不提供——它既是设置表单能渲染出来的前提,也是**加载期**硬要求,这正是 `>=0.1.7-rc.1` 这个引擎下限的来由。
 >
 > 上游为 Apache-2.0,原始版权与许可证保留在 [LICENSE](./LICENSE)。
 >
-> 在 0.2.1 基础上补的东西,都是上游基线(`dsh >= 0.1.1-rc.2`)没覆盖到的漂移:
+> 在 0.2.1 基础上补的东西,都是上游基线(`dsh >= 0.1.1-rc.2`,本分支已提高到 `>=0.1.7-rc.1`)没覆盖到的漂移:
 >
 > - **它能加载了。** `InputState.imageIds` 已更名为 `attachmentIds`,旧字段名会让按钮直接崩掉整个输入框。
 > - **增强能用了。** `settings.get(...)` 已不存在,路由解析每次都会抛 `ctx.get(...)?.get is not a function`;现在改从 `agentDefaultModel` 服务读取全局默认模型。`/enhance` 命令读的是 `invocation.agent.session.id`,而当前契约是 `agent.id`。
@@ -72,13 +79,13 @@ flowchart LR
 
 ## 环境要求
 
-- `dsh >= 0.1.1-rc.2`
-- 实测环境:`0.1.1-rc.2` 与 `0.1.2-alpha.3` 均已 boot 验证(插件层挂载、增强路由应答、客户端 bundle 构建通过;alpha 上走新版 `ctx.settings.installSection` 注册路径)。宿主 `@deepseek-ai/dsh-settings` 的注册 API 在两代之间有破坏性变更,插件按运行时探测自动适配,无需配置。
+- `dsh >= 0.1.7-rc.1` —— 这是代码**实际需要**的下限,不是偏好。schema 用 `@deepseek-ai/schemastery` 的 `.volatile()` 构建,公共 `schemastery` 包并不提供该 API,而 schema 在**模块加载时**就构造:在更早的宿主上 import 即抛错,任何逻辑都来不及运行。(更早的版本声明过 `>=0.1.1-rc.2`,那个声明是过时的。)
+- **已在 `0.1.7-rc.2` 的真实宿主上验证**:插件激活、真实 HTTP 增强请求、GUI 中 `/enhance` 执行、设置页读取并持久化配置。本分支修复的 API 漂移最早是从运行中的 `0.1.7-rc.1` 宿主读出。
 - Node `^22.19.0 || >=24.0.0`(仅从源码构建时需要)
 
 | | |
 |---|---|
-| dsh | `>= 0.1.1-rc.2` |
+| dsh | `>= 0.1.7-rc.1` |
 | Node | `^22.19.0 \|\| >=24.0.0` |
 | 插件 | `0.1.x` |
 

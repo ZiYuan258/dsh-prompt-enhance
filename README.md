@@ -11,12 +11,24 @@ English | [简体中文](./README.zh-CN.md)
 >
 > A maintained fork of [`rongxingda/dsh-prompt-enhance`](https://github.com/rongxingda/dsh-prompt-enhance).
 >
-> - **Validated on DSH 0.1.7-rc.1** — the API drift below was read off that live
->   host and reproduced against it.
-> - **Compiled and tested against DSH 0.1.7-rc.2** — every DSH devDependency is
->   pinned there, so typecheck and the full suite run against that API surface.
->   It has **not** been run on an rc.2 host; that step needs the installed DSH
->   upgraded, not more unit tests. See [CHANGELOG.md](./CHANGELOG.md).
+> **Validated on DSH 0.1.7-rc.2**, on a real host rather than in tests alone:
+>
+> - plugin activation and both halves mounting (`Config` schema served, composer
+>   button registered in the slot tree);
+> - a real HTTP enhancement request returning `200` with a live `deepseek-flash`
+>   rewrite;
+> - a real GUI `/enhance` command execution (recorded as `command/run` in the
+>   session log, result shown in the command plane and kept out of model history);
+> - the Settings page reading **and persisting** configuration.
+>
+> Every DSH devDependency is pinned to `0.1.7-rc.2`, so typecheck and the full
+> suite run against that API surface too. The API drift below was first read off a
+> live `0.1.7-rc.1` host; see [CHANGELOG.md](./CHANGELOG.md) for the per-claim detail.
+>
+> Requires the harness build of schemastery (`@deepseek-ai/schemastery`): the
+> schema uses `.volatile()`, which the public `schemastery` package does not
+> provide — that is both what makes the Settings form render and a load-time
+> requirement, hence the `>=0.1.7-rc.1` engine floor.
 >
 > Upstream sources are Apache-2.0; the original copyright and licence are retained
 > in [LICENSE](./LICENSE).
@@ -89,13 +101,20 @@ The plugin is one npm package with two halves, following the dsh plugin conventi
 
 ## Requirements
 
-- `dsh >= 0.1.1-rc.2`
-- Boot-verified on `0.1.1-rc.2` and `0.1.2-alpha.3` (layer mounts, enhance route answers, client bundle builds; on alpha the plugin takes the newer `ctx.settings.installSection` registration path). `@deepseek-ai/dsh-settings` broke its registration API between the two lines — the plugin probes at runtime and adapts, no configuration needed.
+- `dsh >= 0.1.7-rc.1` — the floor the code actually needs, not a preference. The
+  schema is built with `@deepseek-ai/schemastery`'s `.volatile()`, which the public
+  `schemastery` package does not ship, and the schema is constructed at module
+  load: on an earlier harness the import throws before anything can run. (Earlier
+  releases declared `>=0.1.1-rc.2`; that claim was stale.)
+- **Validated on `0.1.7-rc.2`**, on a real host: plugin activation, a live HTTP
+  enhancement request, a GUI `/enhance` execution, and the Settings page reading
+  and persisting configuration. The API drift this fork fixes was first read off a
+  live `0.1.7-rc.1` host.
 - Node `^22.19.0 || >=24.0.0` (for building from source)
 
 | | |
 |---|---|
-| dsh | `>= 0.1.1-rc.2` |
+| dsh | `>= 0.1.7-rc.1` |
 | Node | `^22.19.0 \|\| >=24.0.0` |
 | Plugin | `0.1.x` |
 

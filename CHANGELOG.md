@@ -23,6 +23,24 @@ refuses the POST, and the browser then failed to parse that HTML as JSON —
 surfacing to the user as *"宿主服务返回了无法解析的响应"*. The revert ships with two
 guards, described under 0.3.0's test notes below.
 
+**The engine floor was stale: `>=0.1.1-rc.2` → `>=0.1.7-rc.1`.** Not a response to
+having tested on a newer host — the old declaration was simply false. The schema is
+built with `@deepseek-ai/schemastery`'s `.volatile()`, which the public
+`schemastery` package does not ship, and it is constructed at module load, so on an
+earlier harness the plugin's `import` throws before any code runs. Declaring a floor
+the code cannot actually boot on is worse than declaring none: a resolver would
+happily install it there. `0.1.7-rc.1` is the earliest release of the line this fork
+targets; `0.1.7-rc.2` is what it was validated on.
+
+**Runtime validation is complete, including the GUI command plane.** Beyond the
+compile-and-test baseline, on a real `0.1.7-rc.2` host: the plugin activates and both
+halves mount; `POST /prompt-enhance/enhance` answers `200` with a live
+`deepseek-flash` rewrite; `/enhance` executes in the GUI (recorded as `command/run`,
+result shown in the command plane and kept out of model history); and the Settings
+page reads **and persists** configuration. The README's earlier "not yet run on an
+rc.2 host" note was true when written and became wrong; it now states what was
+measured.
+
 ## 0.3.0 (2026-09-26)
 
 Fork maintenance release. Makes the 0.2.1 tree work on DSH **0.1.7-rc.1**, which
