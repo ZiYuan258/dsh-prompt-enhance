@@ -2,6 +2,27 @@
 
 All notable changes are documented here. Versions follow the fork's own numbering from 0.3.0 on — npm carries the upstream `dsh-prompt-enhance`, so these numbers are not published there. Apache-2.0 attribution and the list of modified files live in [README.md](./README.md).
 
+## Corrections after 0.3.0
+
+**`webServer` stays in `inject`.** A change briefly dropped it, on the reasoning
+that `registerEnhanceRoute` opens with `ctx.get('webServer')` and returns when it
+is absent — i.e. that the body already treated the service as optional. That
+reasoning was wrong: **Cordis gates `ctx.get` on injection, so an undeclared
+service cannot be reached at all.** Removing the declaration did not make the
+route optional, it made the route impossible.
+
+The break was invisible to the whole test suite, because the failing path is an
+early `return` — nothing threw and every test stayed green. It showed up only
+against a real host:
+
+    inject = ['llm']               POST /prompt-enhance/enhance → 405 Method Not Allowed
+    inject = ['llm', 'webServer']  POST /prompt-enhance/enhance → 200 application/json
+
+405 rather than 404: the web frontend's static handler owns that path for GET and
+refuses the POST, and the browser then failed to parse that HTML as JSON —
+surfacing to the user as *"宿主服务返回了无法解析的响应"*. The revert ships with two
+guards, described under 0.3.0's test notes below.
+
 ## 0.3.0 (2026-09-26)
 
 Fork maintenance release. Makes the 0.2.1 tree work on DSH **0.1.7-rc.1**, which
@@ -100,6 +121,19 @@ volatile-reference flattening (including a referenced `false`), the settings for
 read/write/reset/validation contract, kebab→camel reason lookup for every reason,
 the command's agent-id handling, and the first coverage of the SSE endpoint — two
 tests that read the response to its end, which is what a missing `res.end()` fails.
+
+Two later guards close the gap those tests left open, both added with the
+`webServer` revert (see Corrections above):
+
+- A **declaration test** in `tests/host-apply.test.ts`: `inject` must contain `llm`
+  and `webServer`, and must not contain the genuinely optional services. The
+  failure mode is a silent behaviour loss, so the only cheap guard is refusing the
+  edit by name.
+- A **route test** in `tests/http-route.test.ts`: a POST on the plugin's own path
+  must be answered by the plugin with a JSON body rather than falling through to
+  the static handler. Its assertions are about the ROUTE, not the payload — a 405
+  with an HTML body has to fail there, which a payload-shaped assertion would not
+  necessarily catch.
 
 **Baseline — devDependencies pinned to `0.1.7-rc.2`.** All nine DSH packages moved
 at once (a partially bumped tree would prove nothing), and three more were added
