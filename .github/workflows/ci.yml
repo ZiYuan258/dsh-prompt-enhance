@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege, stated rather than inherited. Without this block the job's
+# GITHUB_TOKEN carries the repository default, which is broader than anything
+# here needs: the workflow only reads the tree. CodeQL flags the omission as
+# `actions/missing-workflow-permissions`, and the alert is correct — a workflow
+# that runs on every push should not hold write scope it never uses.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
