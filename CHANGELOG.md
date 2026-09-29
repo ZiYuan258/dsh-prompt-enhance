@@ -2,6 +2,43 @@
 
 All notable changes are documented here. Versions follow the fork's own numbering from 0.3.0 on — npm carries the upstream `dsh-prompt-enhance`, so these numbers are not published there. Apache-2.0 attribution and the list of modified files live in [README.md](./README.md).
 
+## 0.3.3 (2026-09-29)
+
+Correct 0.3.2, which did not work on a real host. A patch release: no new
+configuration, no API change, and the 0.3.2 intent is unchanged.
+
+- **0.3.2 keyed the retry on an event that never happens.** It wrapped the model
+  call in `try`/`catch` and retried when a *thrown* error carried
+  `UNSUPPORTED_REASONING_EFFORT`. The harness does not throw it: "Adapter
+  selection, dispatch, and iteration failures become terminal `error` or
+  `aborted` finish chunks; middleware, nested-call, cleanup, and consumer
+  failures remain thrown" (`dsh-llm/lib/types/index.js`). The refusal arrives as a
+  **terminal finish chunk**, so the `catch` never ran and every call on a
+  non-reasoning model still failed. Reported from a live host, reproduced here.
+
+  The retry now reads `attempt.assembler.finish`, and it has to: `finish.failure`
+  is where the code survives (`normalizeLlmFailure` freezes
+  `{ message: errorMessage(error), code: harnessErrorCode(error) }`, and
+  `harnessErrorCode` returns `error.code` verbatim for any `HarnessError` —
+  `LlmError` included), while our own `mapCode` collapses every code except
+  `NO_ADAPTER` into `upstream` on the way into the wire error. A first attempt at
+  reading it off that flattened error matched on the wrong field, which the
+  corrected test caught. The code is still never matched against message text.
+
+- **The `inherit` guard was missing from the finish path.** With nothing sent, a
+  retry repeats the identical request and fails the same way, so the deferral now
+  requires that an effort was actually sent. Caught by the suite, not in review.
+
+- **Regression coverage: 208 tests (was 207).** The stub now emits what a live
+  host emits — a terminal `error` finish chunk carrying the code — instead of
+  throwing. That difference is the whole bug: the 0.3.2 tests passed against a
+  stub of the wrong shape, so they proved nothing about the deployed path. A
+  fourth test pins the thrown delivery to the same observable behaviour (one
+  retry, second request without the field) so the defence-in-depth branch cannot
+  rot silently. Validated red-then-green: with the finish check disabled, exactly
+  the two finish-chunk cases failed (`2 failed | 20 passed`) and the `inherit` and
+  thrown-path cases still passed.
+
 ## 0.3.2 (2026-09-29)
 
 Stop a reasoning effort from failing every call on a model that has no reasoning
