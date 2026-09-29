@@ -5,7 +5,8 @@ All notable changes are documented here. Versions follow the fork's own numberin
 ## 0.3.4 (2026-09-29)
 
 Move the development baseline onto the harness the fork is now verified on. A patch
-release: no runtime change at all, and the built artifact is byte-identical.
+release: no runtime change at all, and the built artifact is byte-identical to the
+0.3.3 build.
 
 - **The 13 DSH devDependencies moved from `0.1.7-rc.2` to `0.2.0-rc.1`.** DSH
   Desktop updated to `0.2.0-rc.1` and the 0.3.3 fix was confirmed on it, so the
