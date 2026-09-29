@@ -11,14 +11,14 @@
 >
 > 本仓库是 [`rongxingda/dsh-prompt-enhance`](https://github.com/rongxingda/dsh-prompt-enhance) 的维护分支。
 >
-> **已在 DSH 0.1.7-rc.2 的真实宿主上完成验证**——不只是跑测试:
+> **已在 DSH 0.2.0-rc.1 的真实宿主上完成验证**——不只是跑测试:
 >
 > - 插件激活、两个半边均挂载成功(`Config` schema 已投影、输入框按钮已注册进 slot 树);
 > - 真实 HTTP 增强请求返回 `200`,并由 `deepseek-flash` 实际完成改写;
 > - GUI 中 `/enhance` 命令真实执行(会话日志记录到 `command/run`,结果出现在命令平面且不进入对话历史);
 > - 设置页能读取**并持久化**配置。
 >
-> 所有 DSH devDependency 均锁定 `0.1.7-rc.2`,类型检查与全套测试同样跑在该 API 面上。下面的 API 漂移最早是从运行中的 `0.1.7-rc.1` 宿主读出;逐条证据见 [CHANGELOG.md](./CHANGELOG.md)。
+> 所有 DSH devDependency 均锁定 `0.2.0-rc.1`,类型检查与全套测试同样跑在该 API 面上;逐条证据见 [CHANGELOG.md](./CHANGELOG.md)。
 >
 > 需要宿主自带的 schemastery 构建(`@deepseek-ai/schemastery`):schema 使用了 `.volatile()`,公共 `schemastery` 包并不提供——它既是设置表单能渲染出来的前提,也是**加载期**硬要求,这正是 `>=0.1.7-rc.1` 这个引擎下限的来由。
 >
@@ -80,7 +80,7 @@ flowchart LR
 ## 环境要求
 
 - `dsh >= 0.1.7-rc.1` —— 这是代码**实际需要**的下限,不是偏好。schema 用 `@deepseek-ai/schemastery` 的 `.volatile()` 构建,公共 `schemastery` 包并不提供该 API,而 schema 在**模块加载时**就构造:在更早的宿主上 import 即抛错,任何逻辑都来不及运行。(更早的版本声明过 `>=0.1.1-rc.2`,那个声明是过时的。)
-- **已在 `0.1.7-rc.2` 的真实宿主上验证**:插件激活、真实 HTTP 增强请求、GUI 中 `/enhance` 执行、设置页读取并持久化配置。本分支修复的 API 漂移最早是从运行中的 `0.1.7-rc.1` 宿主读出。
+- **已在 `0.2.0-rc.1` 的真实宿主上验证**:插件激活、真实 HTTP 增强请求、GUI 中 `/enhance` 执行、设置页读取并持久化配置。上面那一轮 `0.1.7-rc.2` 的验证仍然成立,`0.1.7-rc.1` 依旧是引擎下限。
 - Node `^22.19.0 || >=24.0.0`(仅从源码构建时需要)
 
 | | |

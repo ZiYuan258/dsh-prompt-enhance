@@ -11,7 +11,7 @@
 >
 > A maintained fork of [`rongxingda/dsh-prompt-enhance`](https://github.com/rongxingda/dsh-prompt-enhance).
 >
-> **Validated on DSH 0.1.7-rc.2**, on a real host rather than in tests alone:
+> **Validated on DSH 0.2.0-rc.1**, on a real host rather than in tests alone:
 >
 > - plugin activation and both halves mounting (`Config` schema served, composer
 >   button registered in the slot tree);
@@ -21,9 +21,9 @@
 >   session log, result shown in the command plane and kept out of model history);
 > - the Settings page reading **and persisting** configuration.
 >
-> Every DSH devDependency is pinned to `0.1.7-rc.2`, so typecheck and the full
-> suite run against that API surface too. The API drift below was first read off a
-> live `0.1.7-rc.1` host; see [CHANGELOG.md](./CHANGELOG.md) for the per-claim detail.
+> Every DSH devDependency is pinned to `0.2.0-rc.1`, so typecheck and the full
+> suite run against that API surface too. See [CHANGELOG.md](./CHANGELOG.md) for
+> the per-claim detail.
 >
 > Requires the harness build of schemastery (`@deepseek-ai/schemastery`): the
 > schema uses `.volatile()`, which the public `schemastery` package does not
@@ -106,10 +106,10 @@ The plugin is one npm package with two halves, following the dsh plugin conventi
   `schemastery` package does not ship, and the schema is constructed at module
   load: on an earlier harness the import throws before anything can run. (Earlier
   releases declared `>=0.1.1-rc.2`; that claim was stale.)
-- **Validated on `0.1.7-rc.2`**, on a real host: plugin activation, a live HTTP
+- **Validated on `0.2.0-rc.1`**, on a real host: plugin activation, a live HTTP
   enhancement request, a GUI `/enhance` execution, and the Settings page reading
-  and persisting configuration. The API drift this fork fixes was first read off a
-  live `0.1.7-rc.1` host.
+  and persisting configuration. The earlier `0.1.7-rc.2` validation still stands,
+  and `0.1.7-rc.1` remains the engine floor.
 - Node `^22.19.0 || >=24.0.0` (for building from source)
 
 | | |

@@ -2,6 +2,38 @@
 
 All notable changes are documented here. Versions follow the fork's own numbering from 0.3.0 on — npm carries the upstream `dsh-prompt-enhance`, so these numbers are not published there. Apache-2.0 attribution and the list of modified files live in [README.md](./README.md).
 
+## 0.3.4 (2026-09-29)
+
+Move the development baseline onto the harness the fork is now verified on. A patch
+release: no runtime change at all, and the built artifact is byte-identical.
+
+- **The 13 DSH devDependencies moved from `0.1.7-rc.2` to `0.2.0-rc.1`.** DSH
+  Desktop updated to `0.2.0-rc.1` and the 0.3.3 fix was confirmed on it, so the
+  declared baseline now names the version this fork is actually exercised against
+  rather than one release behind it. Typecheck and all 208 tests run on the new
+  surface.
+
+  The evidence that this is a baseline move and not a compatibility repair:
+  against `0.2.0-rc.1` the full build reproduces **byte-identical** `lib/index.js`
+  and `lib/index.js.map` (`git diff --stat lib/` empty after a clean rebuild), and
+  the suite passes unchanged. The API surface this plugin compiles against did not
+  change between the two versions.
+
+- **A clean resolve is required, not an in-place bump.** Every `@deepseek-ai` package
+  peer-requires the rest of the tree at the *exact* same version
+  (`"@deepseek-ai/dsh-agent": "0.2.0-rc.1"`), so npm refuses a partial upgrade from a
+  lockfile pinned at `0.1.7-rc.2` with `ERESOLVE`. Deleting `package-lock.json` and
+  reinstalling resolves the whole tree consistently — measured in a scratch copy
+  first, then here: 29 packages at `0.2.0-rc.1`, 174 total, no conflicts.
+
+- **The engine floor is unchanged at `>=0.1.7-rc.1`.** It was derived from what the
+  code actually needs at module load (`.volatile()` on the host's schemastery), not
+  from what we develop against, and moving the devDeps does not change that.
+
+- Documentation now states the verified host as `0.2.0-rc.1` in both READMEs, with
+  the earlier `0.1.7-rc.2` validation recorded as still standing rather than
+  replaced.
+
 ## 0.3.3 (2026-09-29)
 
 Correct 0.3.2, which did not work on a real host. A patch release: no new
