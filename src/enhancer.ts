@@ -23,6 +23,9 @@ export interface RoutePair {
   model: string
 }
 
+/** The block list one completed call assembles (text and tool-call blocks). */
+type AssembledBlocks = ReturnType<BlockAssembler['blocks']>
+
 /** Internal failure carrying the wire error verbatim. */
 export class EnhanceFailure extends Error {
   constructor(public readonly detail: EnhanceError) {
@@ -201,28 +204,55 @@ export async function enhanceText(llm: LlmStreamFace, options: EnhanceCallOption
     // The configured effort, and the one a downgrade retry falls back to:
     // `inherit` leaves the field off the request entirely.
     const requestedEffort: ReasoningEffortChoice = options.reasoningEffort
-    let attempt: { assembler: BlockAssembler; exhausted: boolean }
-    try {
-      attempt = await readCall(requestedEffort)
-    } catch (error) {
-      // A route whose model declares no reasoning capability rejects an explicit
-      // effort outright (harness code `UNSUPPORTED_REASONING_EFFORT`) without
-      // provider I/O. Since there is nothing to retry against a provider, defer
-      // to `inherit` once and keep the cheap `off` default working everywhere
-      // else rather than paying every model the expensive model-default effort.
-      // Only a deferral we can actually be responsible for is retried: with
-      // `inherit` configured we sent no effort at all, so the code cannot
-      // belong to us and is surfaced instead.
-      if (requestedEffort === 'inherit' || !isUnsupportedEffort(error)) throw error
-      // Nothing may be reused from the rejected attempt: the assembler would
-      // splice its partial blocks into the retry and the deadline listeners
-      // are already released by the attempt's own `finally`.
-      attempt = await readCall('inherit')
+    // One model call per attempt; the loop exists only for the single effort
+    // downgrade below, so it can never spin more than twice.
+    let retriedWithoutEffort = false
+    const readAttempt = async (): Promise<
+      { ok: true; blocks: ReturnType<BlockAssembler['blocks']> } | { ok: false; detail: EnhanceError }
+    > => {
+      while (true) {
+        let attempt: { assembler: BlockAssembler; exhausted: boolean }
+        try {
+          attempt = await readCall(retriedWithoutEffort ? 'inherit' : requestedEffort)
+        } catch (error) {
+          // Defence for a host that rejects the effort somewhere the harness's
+          // own terminal conversion does not cover; on a current host this does
+          // not fire (see the finish check right below).
+          if (retriedWithoutEffort || requestedEffort === 'inherit' || !isEffortRejectionThrow(error)) throw error
+          retriedWithoutEffort = true
+          continue
+        }
+        signal.throwIfAborted()
+        // A route whose model declares no reasoning capability rejects an explicit
+        // effort outright (harness code `UNSUPPORTED_REASONING_EFFORT`) before any
+        // provider I/O. The harness delivers that as a terminal `error` FINISH
+        // CHUNK, not a throw: "Adapter selection, dispatch, and iteration failures
+        // become terminal `error` or `aborted` finish chunks; middleware,
+        // nested-call, cleanup, and consumer failures remain thrown"
+        // (dsh-llm/lib/types/index.js). The code is read off the finish reason
+        // itself, because flattening it into our `EnhanceError` loses it.
+        //
+        // There is no provider work to redo — only the field to drop — so defer to
+        // `inherit` once and keep the cheap `off` default working everywhere else
+        // rather than paying every model the expensive model-default effort. With
+        // `inherit` configured we sent no effort, so the code cannot belong to us
+        // and is surfaced instead. The rejected attempt's assembler is discarded:
+        // reusing it would splice its partial blocks into the retry.
+        // With `inherit` configured we sent no effort, so a retry would repeat the
+        // identical request and fail the same way — surfaced instead of retried.
+        const rejected = isEffortRejectionFinish(attempt.assembler.finish)
+        if (retriedWithoutEffort || requestedEffort === 'inherit' || !rejected) {
+          const detail = finishToDetail(attempt.assembler.finish)
+          return detail === undefined ? { ok: true, blocks: attempt.assembler.blocks() } : { ok: false, detail }
+        }
+        retriedWithoutEffort = true
+      }
     }
-    signal.throwIfAborted()
-    const finishError = finishToDetail(attempt.assembler.finish)
-    if (finishError !== undefined) fail(finishError)
-    const blocks = attempt.assembler.blocks()
+    const outcome = await readAttempt()
+    if (!outcome.ok) {
+      return fail(outcome.detail)
+    }
+    const blocks: AssembledBlocks = outcome.blocks
     if (blocks.some((block) => block.type === 'tool-call')) {
       fail({ code: 'upstream', params: { reason: 'tool-call' } })
     }
@@ -362,31 +392,48 @@ function describe(error: unknown): string {
 /** The harness code for "this model declares no reasoning capability at all". */
 const UNSUPPORTED_REASONING_EFFORT = 'UNSUPPORTED_REASONING_EFFORT'
 
-/**
- * Read the stable machine code off a thrown harness error. The code is what the
- * retry keys on: the message is localized prose and the wire `detail` is our own
- * envelope, so neither may be matched on.
- * @param error - the thrown value.
- * @returns the code, or undefined when the throw carries none.
- */
-function errorCodeOf(error: unknown): string | undefined {
-  if (error === null || typeof error !== 'object') return undefined
-  const { code, failure } = error as { code?: unknown; failure?: unknown }
-  if (typeof code === 'string') return code
-  if (failure !== null && typeof failure === 'object') {
-    const nested = (failure as { code?: unknown }).code
-    if (typeof nested === 'string') return nested
-  }
-  return undefined
+/** Whether a harness code string is the "no reasoning capability" refusal. */
+function isEffortRejectionCode(code: string | undefined): boolean {
+  return code === UNSUPPORTED_REASONING_EFFORT
 }
 
 /**
- * Whether a thrown value is the harness refusing an explicit reasoning effort.
- * @param error - the thrown value.
- * @returns true when the error carries the unsupported-effort code.
+ * Whether a terminal finish reason is the harness refusing our explicit effort.
+ *
+ * Read off `finish.failure.code`, which is where the code actually survives:
+ * `normalizeLlmFailure` freezes `{ message: errorMessage(error), code:
+ * harnessErrorCode(error) }`, and `harnessErrorCode` returns `error.code`
+ * verbatim for any `HarnessError` (and `LlmError` is one), while `message` stays
+ * the localized prose. The flattened `EnhanceError` cannot answer this — our
+ * `mapCode` collapses every harness code except `NO_ADAPTER` into `upstream` —
+ * so the question is asked here, before that collapse, and never of the message
+ * text, which is prose that already changed once between harness versions.
+ * @param reason - the attempt's terminal finish reason.
+ * @returns true when the refusal is specifically about the reasoning effort.
  */
-function isUnsupportedEffort(error: unknown): boolean {
-  return errorCodeOf(error) === UNSUPPORTED_REASONING_EFFORT
+function isEffortRejectionFinish(reason: unknown): boolean {
+  if (reason === null || typeof reason !== 'object') return false
+  const { kind, failure } = reason as { kind?: unknown; failure?: unknown }
+  if (kind !== 'error' || failure === null || typeof failure !== 'object') return false
+  return isEffortRejectionCode((failure as { code?: string }).code)
+}
+
+/**
+ * The same question for a thrown value, as defence in depth: a live host reports
+ * the refusal as a terminal finish chunk, but a host that throws it must not
+ * lose the deferral. `HarnessError` carries `code` as an own property, and
+ * `toEnhanceError` copies it into `detail.message` rather than dropping it.
+ * @param error - the thrown value.
+ * @returns true when the throw is the reasoning-effort refusal.
+ */
+function isEffortRejectionThrow(error: unknown): boolean {
+  if (error === null || typeof error !== 'object') return false
+  const { code, failure } = error as { code?: unknown; failure?: unknown }
+  if (isEffortRejectionCode(typeof code === 'string' ? code : undefined)) return true
+  if (failure !== null && typeof failure === 'object') {
+    return isEffortRejectionCode((failure as { code?: string }).code)
+  }
+  return false
 }
 
 /**

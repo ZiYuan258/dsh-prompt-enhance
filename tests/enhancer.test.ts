@@ -38,16 +38,39 @@ function stubLlm(stream: (options: GenerateOptions) => AsyncIterable<StreamChunk
 }
 
 /**
- * Mimic the harness refusing an explicit reasoning effort for a model whose
- * capability declares no reasoning at all. Shape copied from the real
- * `LlmError`: a plain `Error` carrying a stable machine `code`, which is what
- * the deferral keys on (the prose message is not matched).
+ * Mimic how a real host reports the harness refusing an explicit reasoning
+ * effort for a model whose capability declares no reasoning at all.
+ *
+ * Shape copied from the harness source, not invented: an adapter throw is turned
+ * into a terminal `error` finish CHUNK rather than propagating
+ * (`dsh-llm/lib/types/index.js`: "Adapter selection, dispatch, and iteration
+ * failures become terminal `error` or `aborted` finish chunks"), and
+ * `normalizeLlmFailure` keeps the code verbatim because `harnessErrorCode` reads
+ * `error.code` off any `HarnessError` and `LlmError` is one. So the stable string
+ * `UNSUPPORTED_REASONING_EFFORT` arrives as `failure.code`, and the message is the
+ * localized prose the retry must NOT be matching on.
  * @param effort - the effort the call asked for.
- * @returns the error the harness would throw.
+ * @returns the terminal finish chunk a live host emits for that call.
  */
-function noReasoningSupport(effort: string): Error {
-  const error = new Error(`provider "agnes" model "agnes-2.5-flash" does not support reasoning effort "${effort}"`)
-  return Object.assign(error, { code: 'UNSUPPORTED_REASONING_EFFORT' })
+function noReasoningSupport(effort: string): StreamChunk {
+  return {
+    type: 'finish',
+    reason: {
+      kind: 'error',
+      failure: {
+        message: `provider "agnes" model "agnes-2.5-flash" does not support reasoning effort "${effort}"`,
+        code: 'UNSUPPORTED_REASONING_EFFORT',
+      },
+    },
+  }
+}
+
+/** A stream whose only content is the harness's unsupported-effort refusal. */
+function refusalStream(effort: string): AsyncIterable<StreamChunk> {
+  const chunk = noReasoningSupport(effort)
+  return (async function* (): AsyncGenerator<StreamChunk> {
+    yield chunk
+  })()
 }
 
 const baseOptions = {
@@ -90,13 +113,16 @@ describe('enhanceText', () => {
   // The harness rejects an explicit effort outright when the model declares no
   // reasoning capability, before any provider I/O, with this exact code. The
   // cheap `off` default must therefore degrade to "no field" for those models
-  // instead of failing every call. Verified against the harness source:
-  // @deepseek-ai/dsh-llm/lib/types/index.js throws
-  // `provider "x" model "y" does not support reasoning effort "off"` with
-  // code `UNSUPPORTED_REASONING_EFFORT`.
+  // instead of failing every call.
+  //
+  // This test asserts on the finish-chunk shape on purpose. An earlier version
+  // of it stubbed the refusal as a THROW and passed while the real host kept
+  // failing: the harness converts an adapter failure into a terminal finish
+  // chunk, so nothing was ever thrown for the retry to catch. The stub had the
+  // wrong shape, not the assertion.
   it('retries once without the effort when the model has no reasoning capability', async () => {
     const llm = stubLlm((options) => {
-      if (options.reasoningEffort !== undefined) throw noReasoningSupport(options.reasoningEffort)
+      if (options.reasoningEffort !== undefined) return refusalStream(options.reasoningEffort)
       return textStream(['ok'], { reason: 'stop' })
     })
     const result = await enhanceText(llm, baseOptions)
@@ -112,9 +138,9 @@ describe('enhanceText', () => {
     let calls = 0
     const llm = stubLlm(() => {
       calls += 1
-      throw noReasoningSupport('off')
+      return refusalStream('off')
     })
-    await expect(enhanceText(llm, { ...baseOptions, reasoningEffort: 'inherit' })).rejects.toMatchObject({ detail: { code: 'internal' } })
+    await expect(enhanceText(llm, { ...baseOptions, reasoningEffort: 'inherit' })).rejects.toMatchObject({ detail: { code: 'upstream' } })
     // No effort was sent, so the refusal cannot belong to this call: retrying
     // would send the identical request and fail the same way.
     expect(calls).toBe(1)
@@ -124,11 +150,31 @@ describe('enhanceText', () => {
     let calls = 0
     const llm = stubLlm(() => {
       calls += 1
-      throw noReasoningSupport('off')
+      return refusalStream('off')
     })
-    await expect(enhanceText(llm, baseOptions)).rejects.toMatchObject({ detail: { code: 'internal' } })
+    await expect(enhanceText(llm, baseOptions)).rejects.toMatchObject({ detail: { code: 'upstream' } })
     // Exactly one deferral: the retry is not itself retried.
     expect(calls).toBe(2)
+  })
+
+  // Defence in depth for a host that rejects the effort outside the harness's
+  // terminal conversion. Nothing ships that relies on this `catch` — a live host
+  // takes the finish-chunk path above — but the retry must not regress silently
+  // if one ever throws, so both shapes are pinned to the same observable
+  // behaviour: one retry, and the second request carries no effort.
+  it('retries the same way when the refusal arrives as a thrown error', async () => {
+    const llm = stubLlm((options) => {
+      if (options.reasoningEffort !== undefined) {
+        return (async function* (): AsyncGenerator<StreamChunk> {
+          throw Object.assign(new Error(`provider "agnes" model "agnes-2.5-flash" does not support reasoning effort "${options.reasoningEffort}"`), { code: 'UNSUPPORTED_REASONING_EFFORT' })
+        })()
+      }
+      return textStream(['ok'], { reason: 'stop' })
+    })
+    const result = await enhanceText(llm, baseOptions)
+    expect(result.text).toBe('ok')
+    expect(llm.calls).toHaveLength(2)
+    expect(llm.calls[1]).not.toHaveProperty('reasoningEffort')
   })
 
   it('strips a wrapping fence from the model output', async () => {
