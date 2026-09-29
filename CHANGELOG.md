@@ -2,6 +2,43 @@
 
 All notable changes are documented here. Versions follow the fork's own numbering from 0.3.0 on — npm carries the upstream `dsh-prompt-enhance`, so these numbers are not published there. Apache-2.0 attribution and the list of modified files live in [README.md](./README.md).
 
+## 0.3.2 (2026-09-29)
+
+Stop a reasoning effort from failing every call on a model that has no reasoning
+capability. A patch release: no new configuration, no API change, and the cheap
+default keeps working everywhere it already did.
+
+- **The effort is now deferred, once, instead of being fatal.** The plugin sends
+  `reasoningEffort` explicitly on every call on purpose — leaving the field out
+  makes the adapter apply the model's own default effort, which measured ~11x the
+  output tokens of `off` on the same draft and did not rewrite any better. But
+  `dsh-llm` validates that field against the model's declared capability and
+  **rejects before any provider I/O** when the model declares no reasoning at all
+  (`UNSUPPORTED_REASONING_EFFORT`: `provider "x" model "y" does not support
+  reasoning effort "off"`). A provider configured with plain chat models — the
+  user's `agnes` provider declares only `input: [text, image]` — therefore failed
+  on every single call.
+
+  The call is now split so the effort can be swapped: if that exact machine code
+  comes back *and* an effort was actually sent, the request is re-issued once with
+  the field omitted, and the error is surfaced only if the retry fails too. The
+  retry is keyed on the stable code, never on the message text. When the setting is
+  already `inherit` no effort was sent, so the code cannot belong to this call and
+  is surfaced without a retry. Each attempt gets a fresh assembler and iterator:
+  reusing either would splice the rejected attempt's partial blocks into the retry.
+  This is why the default is not simply changed to `inherit` — that would forfeit
+  the measured saving on every model that does support reasoning, to accommodate
+  the ones that do not.
+
+- **Regression coverage: 207 tests (was 204).** Three cases in
+  `tests/enhancer.test.ts`: the deferral succeeds and is identifiable in the
+  recorded traffic as two calls (the first carrying the effort, the second without
+  it), an `inherit` configuration refuses to retry, and a retry that fails too is
+  not retried again. Validated red-then-green: with the deferral disabled, exactly
+  the two retry cases failed (`2 failed | 19 passed`) and the `inherit` case still
+  passed, which is the behaviour that distinguishes the guard from a blanket
+  fallback.
+
 ## 0.3.1 (2026-09-26)
 
 Fix an unhandled rejection in the legacy settings compatibility path. A patch

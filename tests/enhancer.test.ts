@@ -37,6 +37,19 @@ function stubLlm(stream: (options: GenerateOptions) => AsyncIterable<StreamChunk
   }
 }
 
+/**
+ * Mimic the harness refusing an explicit reasoning effort for a model whose
+ * capability declares no reasoning at all. Shape copied from the real
+ * `LlmError`: a plain `Error` carrying a stable machine `code`, which is what
+ * the deferral keys on (the prose message is not matched).
+ * @param effort - the effort the call asked for.
+ * @returns the error the harness would throw.
+ */
+function noReasoningSupport(effort: string): Error {
+  const error = new Error(`provider "agnes" model "agnes-2.5-flash" does not support reasoning effort "${effort}"`)
+  return Object.assign(error, { code: 'UNSUPPORTED_REASONING_EFFORT' })
+}
+
 const baseOptions = {
   route: { provider: 'zhipu', model: 'glm-5.3' } satisfies RoutePair,
   system: 'SYS',
@@ -72,6 +85,50 @@ describe('enhanceText', () => {
     const llm = stubLlm(() => textStream(['ok'], { reason: 'stop' }))
     await enhanceText(llm, { ...baseOptions, reasoningEffort: 'inherit' })
     expect(llm.calls[0]).not.toHaveProperty('reasoningEffort')
+  })
+
+  // The harness rejects an explicit effort outright when the model declares no
+  // reasoning capability, before any provider I/O, with this exact code. The
+  // cheap `off` default must therefore degrade to "no field" for those models
+  // instead of failing every call. Verified against the harness source:
+  // @deepseek-ai/dsh-llm/lib/types/index.js throws
+  // `provider "x" model "y" does not support reasoning effort "off"` with
+  // code `UNSUPPORTED_REASONING_EFFORT`.
+  it('retries once without the effort when the model has no reasoning capability', async () => {
+    const llm = stubLlm((options) => {
+      if (options.reasoningEffort !== undefined) throw noReasoningSupport(options.reasoningEffort)
+      return textStream(['ok'], { reason: 'stop' })
+    })
+    const result = await enhanceText(llm, baseOptions)
+    expect(result.text).toBe('ok')
+    expect(llm.calls).toHaveLength(2)
+    // The rejected attempt is not silently dropped: it is identifiable in the
+    // recorded traffic as the one that carried the effort.
+    expect(llm.calls[0]?.reasoningEffort).toBe('off')
+    expect(llm.calls[1]).not.toHaveProperty('reasoningEffort')
+  })
+
+  it('surfaces the refusal without retrying when the effort was already inherit', async () => {
+    let calls = 0
+    const llm = stubLlm(() => {
+      calls += 1
+      throw noReasoningSupport('off')
+    })
+    await expect(enhanceText(llm, { ...baseOptions, reasoningEffort: 'inherit' })).rejects.toMatchObject({ detail: { code: 'internal' } })
+    // No effort was sent, so the refusal cannot belong to this call: retrying
+    // would send the identical request and fail the same way.
+    expect(calls).toBe(1)
+  })
+
+  it('surfaces the error when the deferred retry fails too', async () => {
+    let calls = 0
+    const llm = stubLlm(() => {
+      calls += 1
+      throw noReasoningSupport('off')
+    })
+    await expect(enhanceText(llm, baseOptions)).rejects.toMatchObject({ detail: { code: 'internal' } })
+    // Exactly one deferral: the retry is not itself retried.
+    expect(calls).toBe(2)
   })
 
   it('strips a wrapping fence from the model output', async () => {

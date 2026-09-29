@@ -123,69 +123,106 @@ export async function enhanceText(llm: LlmStreamFace, options: EnhanceCallOption
         source: { kind: 'plugin', plugin: 'dsh-prompt-enhance' },
       }),
     ]
-    const generate: GenerateOptions = {
-      provider: options.route.provider,
-      model: options.route.model,
-      system: options.system,
-      messages,
-      temperature: options.temperature,
-      maxTokens: options.maxTokens,
-      signal,
-      // `inherit` deliberately leaves the field unset, for a route that rejects
-      // an explicit effort; `ReasoningEffortId` is a brand over the effort id.
-      ...options.reasoningEffort === 'inherit'
-        ? {}
-        : { reasoningEffort: options.reasoningEffort as NonNullable<GenerateOptions['reasoningEffort']> },
-      ...options.sessionId !== undefined ? { sessionId: options.sessionId as GenerateOptions['sessionId'] } : {},
-    }
-    const assembler = new BlockAssembler()
-    const iterator = llm.stream(generate)[Symbol.asyncIterator]()
-    // Race the iteration against the deadline: an adapter that stalls without
-    // yielding must still hit the timeout (per-chunk checks alone would hang).
-    let onAbort: (() => void) | undefined
-    const aborted = new Promise<never>((_, reject) => {
-      onAbort = () => {
-        const error = new Error('prompt-enhance: aborted')
-        error.name = 'AbortError'
-        reject(error)
+    /**
+     * Read one model call to completion, at a given reasoning budget.
+     *
+     * Split out of the enclosing function so the effort can be dropped and the
+     * call retried once — see the `UNSUPPORTED_REASONING_EFFORT` handling below.
+     * Each attempt needs a FRESH assembler and iterator: reusing either would
+     * splice the first attempt's partial blocks into the second one's result.
+     * @param effort - the effort to request, or `inherit` to omit the field.
+     * @returns the assembled call, ready for the finish-reason checks.
+     */
+    const readCall = async (effort: ReasoningEffortChoice): Promise<{
+      assembler: BlockAssembler
+      exhausted: boolean
+    }> => {
+      const generate: GenerateOptions = {
+        provider: options.route.provider,
+        model: options.route.model,
+        system: options.system,
+        messages,
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        signal,
+        // `inherit` deliberately leaves the field unset, for a route that rejects
+        // an explicit effort; `ReasoningEffortId` is a brand over the effort id.
+        ...effort === 'inherit'
+          ? {}
+          : { reasoningEffort: effort as NonNullable<GenerateOptions['reasoningEffort']> },
+        ...options.sessionId !== undefined ? { sessionId: options.sessionId as GenerateOptions['sessionId'] } : {},
       }
-      if (signal.aborted) onAbort()
-      else signal.addEventListener('abort', onAbort, { once: true })
-    })
-    let exhausted = false
-    try {
-      while (true) {
-        signal.throwIfAborted()
-        const next = await Promise.race([iterator.next(), aborted])
-        if (next.done) {
-          exhausted = true
-          break
+      const assembler = new BlockAssembler()
+      const iterator = llm.stream(generate)[Symbol.asyncIterator]()
+      // Race the iteration against the deadline: an adapter that stalls without
+      // yielding must still hit the timeout (per-chunk checks alone would hang).
+      let onAbort: (() => void) | undefined
+      const aborted = new Promise<never>((_, reject) => {
+        onAbort = () => {
+          const error = new Error('prompt-enhance: aborted')
+          error.name = 'AbortError'
+          reject(error)
         }
-        assembler.push(next.value)
-        // Display-only tap: the stream already arrives incrementally, so the
-        // panel can show the rewrite as it is written instead of waiting for
-        // the final normalization.
-        if (next.value.type === 'text-delta' && options.onDelta !== undefined) {
-          try {
-            options.onDelta(next.value.text)
-          } catch {
-            // Never let a broken display path fail the enhancement.
+        if (signal.aborted) onAbort()
+        else signal.addEventListener('abort', onAbort, { once: true })
+      })
+      let exhausted = false
+      try {
+        while (true) {
+          signal.throwIfAborted()
+          const next = await Promise.race([iterator.next(), aborted])
+          if (next.done) {
+            exhausted = true
+            break
+          }
+          assembler.push(next.value)
+          // Display-only tap: the stream already arrives incrementally, so the
+          // panel can show the rewrite as it is written instead of waiting for
+          // the final normalization.
+          if (next.value.type === 'text-delta' && options.onDelta !== undefined) {
+            try {
+              options.onDelta(next.value.text)
+            } catch {
+              // Never let a broken display path fail the enhancement.
+            }
           }
         }
+      } finally {
+        if (onAbort !== undefined && !signal.aborted) signal.removeEventListener('abort', onAbort)
+        // On timeout/cancel the pending next() never settles, so the loop exits
+        // without exhausting the iterator — prompt the underlying stream to
+        // finalize its connection instead of leaving it to the GC.
+        if (!exhausted) {
+          void Promise.resolve(iterator.return?.()).catch(() => {})
+        }
       }
-    } finally {
-      if (onAbort !== undefined && !signal.aborted) signal.removeEventListener('abort', onAbort)
-      // On timeout/cancel the pending next() never settles, so the loop exits
-      // without exhausting the iterator — prompt the underlying stream to
-      // finalize its connection instead of leaving it to the GC.
-      if (!exhausted) {
-        void Promise.resolve(iterator.return?.()).catch(() => {})
-      }
+      return { assembler, exhausted }
+    }
+    // The configured effort, and the one a downgrade retry falls back to:
+    // `inherit` leaves the field off the request entirely.
+    const requestedEffort: ReasoningEffortChoice = options.reasoningEffort
+    let attempt: { assembler: BlockAssembler; exhausted: boolean }
+    try {
+      attempt = await readCall(requestedEffort)
+    } catch (error) {
+      // A route whose model declares no reasoning capability rejects an explicit
+      // effort outright (harness code `UNSUPPORTED_REASONING_EFFORT`) without
+      // provider I/O. Since there is nothing to retry against a provider, defer
+      // to `inherit` once and keep the cheap `off` default working everywhere
+      // else rather than paying every model the expensive model-default effort.
+      // Only a deferral we can actually be responsible for is retried: with
+      // `inherit` configured we sent no effort at all, so the code cannot
+      // belong to us and is surfaced instead.
+      if (requestedEffort === 'inherit' || !isUnsupportedEffort(error)) throw error
+      // Nothing may be reused from the rejected attempt: the assembler would
+      // splice its partial blocks into the retry and the deadline listeners
+      // are already released by the attempt's own `finally`.
+      attempt = await readCall('inherit')
     }
     signal.throwIfAborted()
-    const finishError = finishToDetail(assembler.finish)
+    const finishError = finishToDetail(attempt.assembler.finish)
     if (finishError !== undefined) fail(finishError)
-    const blocks = assembler.blocks()
+    const blocks = attempt.assembler.blocks()
     if (blocks.some((block) => block.type === 'tool-call')) {
       fail({ code: 'upstream', params: { reason: 'tool-call' } })
     }
@@ -320,6 +357,36 @@ export function formatEnhanceError(error: EnhanceError): string {
 function describe(error: unknown): string {
   if (error instanceof Error) return error.message
   return String(error)
+}
+
+/** The harness code for "this model declares no reasoning capability at all". */
+const UNSUPPORTED_REASONING_EFFORT = 'UNSUPPORTED_REASONING_EFFORT'
+
+/**
+ * Read the stable machine code off a thrown harness error. The code is what the
+ * retry keys on: the message is localized prose and the wire `detail` is our own
+ * envelope, so neither may be matched on.
+ * @param error - the thrown value.
+ * @returns the code, or undefined when the throw carries none.
+ */
+function errorCodeOf(error: unknown): string | undefined {
+  if (error === null || typeof error !== 'object') return undefined
+  const { code, failure } = error as { code?: unknown; failure?: unknown }
+  if (typeof code === 'string') return code
+  if (failure !== null && typeof failure === 'object') {
+    const nested = (failure as { code?: unknown }).code
+    if (typeof nested === 'string') return nested
+  }
+  return undefined
+}
+
+/**
+ * Whether a thrown value is the harness refusing an explicit reasoning effort.
+ * @param error - the thrown value.
+ * @returns true when the error carries the unsupported-effort code.
+ */
+function isUnsupportedEffort(error: unknown): boolean {
+  return errorCodeOf(error) === UNSUPPORTED_REASONING_EFFORT
 }
 
 /**
