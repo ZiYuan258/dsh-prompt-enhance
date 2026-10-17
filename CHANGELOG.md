@@ -2,6 +2,54 @@
 
 All notable changes are documented here. Versions follow the fork's own numbering from 0.3.0 on — npm carries the upstream `dsh-prompt-enhance`, so these numbers are not published there. Apache-2.0 attribution and the list of modified files live in [README.md](./README.md).
 
+## 0.3.5 (2026-10-17)
+
+Move the development baseline onto the harness the fork is now verified on, and fix
+a preflight false alarm. A patch release: no runtime change at all, and the built
+artifact is byte-identical to the 0.3.4 build.
+
+- **The 13 DSH devDependencies moved from `0.2.0-rc.1` to `0.2.1-rc.2`.** DSH Desktop
+  updated, and the fork was re-verified on the new host rather than assumed to carry
+  over. Typecheck and all 208 tests run on the new surface.
+
+  The evidence that this is a baseline move and not a compatibility repair: against
+  `0.2.1-rc.2` the full build reproduces **byte-identical** `lib/index.js`
+  (`48566` bytes, sha256 `A83FF6A7…`), `lib/index.js.map` (`140499`, `776E2C76…`) and
+  `lib/client.js` (`70493`, `61B28261…`). The API surface this plugin compiles
+  against did not change between the two versions.
+
+- **Live host verification on `0.2.1-rc.2`.** Both halves mount: `Config.listConfigs`
+  reports `include:prompt-enhance` with `status: "schema"` — the host projected the
+  settings schema, so the plugin activated — and the client registers its occupant
+  `prompt-enhance` at order 60 in `conversation.input.right`. A real
+  `POST /prompt-enhance/enhance` (loopback, `Origin` set, no bypass) returned `200`
+  with `{"ok":true,…,"provider":"raccoon","model":"sn-deepseek-v4-1-flash","elapsedMs":8702}`.
+  No adaptation was required. The GUI `/enhance` execution and the Settings page were
+  verified in the earlier `0.2.0-rc.1` round and are deliberately **not** re-claimed
+  here: they were not re-run on `0.2.1-rc.2`.
+
+- **`check:mount` no longer reports host-provided bundles as missing.** The preflight
+  read `dsh.profile.bundles` out of the profile manifest and then looked for every
+  listed name in `dependencies`. Bundles the harness itself ships
+  (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`) are not profile dependencies,
+  so it warned about entries that were never expected to be there. A bundle name with
+  no matching dependency is now reported as host-provided.
+
+- **The engine floor is unchanged at `>=0.1.7-rc.1`.** It was derived from what the
+  code actually needs at module load (`.volatile()` on the host's schemastery), not
+  from what we develop against, and moving the devDeps does not change that.
+
+- **A clean resolve was required again, not an in-place bump**, for the same
+  exact-peer-pinning reason as 0.3.4. Registry note for anyone reproducing this on
+  this machine: `registry.npmjs.org` is unreachable here (a request times out after
+  20s) while `registry.npmmirror.com` answers in under a second, and npmmirror does
+  carry `0.2.1-rc.2`. The resolved tree is 28 `@deepseek-ai/dsh-*` packages, all at
+  `0.2.1-rc.2`, plus `@deepseek-ai/cordis 4.0.5` and `@deepseek-ai/schemastery 3.18.5`.
+
+- Documentation now states the verified host as `0.2.1-rc.2` in both READMEs, with
+  the `0.2.0-rc.1` and `0.1.7-rc.2` rounds recorded as still standing for those
+  versions.
+
 ## 0.3.4 (2026-09-29)
 
 Move the development baseline onto the harness the fork is now verified on. A patch

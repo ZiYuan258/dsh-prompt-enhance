@@ -11,17 +11,18 @@
 >
 > A maintained fork of [`rongxingda/dsh-prompt-enhance`](https://github.com/rongxingda/dsh-prompt-enhance).
 >
-> **Validated on DSH 0.2.0-rc.1**, on a real host rather than in tests alone:
+> **Validated on DSH 0.2.1-rc.2**, on a real host rather than in tests alone:
 >
 > - plugin activation and both halves mounting (`Config` schema served, composer
 >   button registered in the slot tree);
-> - a real HTTP enhancement request returning `200` with a live `deepseek-flash`
->   rewrite;
-> - a real GUI `/enhance` command execution (recorded as `command/run` in the
->   session log, result shown in the command plane and kept out of model history);
-> - the Settings page reading **and persisting** configuration.
+> - a real HTTP enhancement request returning `200` with a live model rewrite
+>   (measured on `raccoon/sn-deepseek-v4-1-flash`, 8.7s).
 >
-> Every DSH devDependency is pinned to `0.2.0-rc.1`, so typecheck and the full
+> The earlier `0.2.0-rc.1` round additionally covered a GUI `/enhance` execution
+> and the Settings page reading and persisting configuration; those findings still
+> stand for `0.2.0-rc.1`.
+>
+> Every DSH devDependency is pinned to `0.2.1-rc.2`, so typecheck and the full
 > suite run against that API surface too. See [CHANGELOG.md](./CHANGELOG.md) for
 > the per-claim detail.
 >
@@ -106,10 +107,12 @@ The plugin is one npm package with two halves, following the dsh plugin conventi
   `schemastery` package does not ship, and the schema is constructed at module
   load: on an earlier harness the import throws before anything can run. (Earlier
   releases declared `>=0.1.1-rc.2`; that claim was stale.)
-- **Validated on `0.2.0-rc.1`**, on a real host: plugin activation, a live HTTP
-  enhancement request, a GUI `/enhance` execution, and the Settings page reading
-  and persisting configuration. The earlier `0.1.7-rc.2` validation still stands,
-  and `0.1.7-rc.1` remains the engine floor.
+- **Validated on `0.2.1-rc.2`**, on a real host: plugin activation, both halves
+  mounting, and a live HTTP enhancement request returning `200` with a completed
+  rewrite. The earlier `0.2.0-rc.1` round additionally covered a GUI `/enhance`
+  execution and the Settings page, and those findings still stand for that
+  version; the `0.1.7-rc.2` validation also still stands, and `0.1.7-rc.1` remains
+  the engine floor.
 - Node `^22.19.0 || >=24.0.0` (for building from source)
 
 | | |
