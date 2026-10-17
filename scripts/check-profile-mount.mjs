@@ -112,6 +112,16 @@ function patchLayerOf(pkgName) {
   try {
     manifestPath = require.resolve(`${pkgName}/package.json`)
   } catch {
+    // Not every bundle listed in `dsh.profile.bundles` comes from the profile.
+    // The host runtime supplies its own base bundles from inside the app image,
+    // so `@deepseek-ai/dsh-base` and `@deepseek-ai/dsh-web-app` are normally
+    // absent from the profile's node_modules and resolution cannot succeed.
+    // Only a bundle the profile actually declares as a dependency must resolve
+    // here; anything else is the host's to provide.
+    if (dependencies[pkgName] === undefined) {
+      notes.push(`host-provided bundle: ${pkgName} (not a profile dependency)`)
+      return []
+    }
     problems.push(`bundle "${pkgName}" does not resolve from ${profileDir}`)
     return []
   }
